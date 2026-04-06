@@ -1,0 +1,16 @@
+# Minimal dependencies for running this project on macOS (CPU / Apple Silicon MPS).
+# Install PyTorch separately if you need a specific build:
+# pip install torch torchvision
+
+gdown==4.2.0
+kornia==0.6.7
+numpy
+opencv-python
+Pillow
+pytorch-msssim
+PyYAML
+scipy
+timm==0.4.12
+torchsummary==1.5.1
+torch
+torchvision
