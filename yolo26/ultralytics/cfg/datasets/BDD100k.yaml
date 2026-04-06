@@ -1,0 +1,39 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+# BDD100K object detection dataset
+# Documentation: https://docs.ultralytics.com/datasets/detect/
+# Example usage:
+#   python scripts/convert_bdd100k_to_yolo.py --dataset-root datasets/BDD100k
+#   yolo26 detect train data=ultralytics/cfg/datasets/BDD100k.yaml model=yolo26n.pt epochs=100 imgsz=640
+# parent
+# ├── ultralytics
+# ├── scripts
+# └── datasets
+#     └── BDD100k
+#         ├── images
+#         │   └── 100k
+#         │       ├── train
+#         │       ├── val
+#         │       └── test
+#         └── labels
+#             └── 100k
+#                 ├── train
+#                 ├── val
+#                 └── test
+
+path: BDD100k
+train: images/100k/train
+val: images/100k/val
+test: images/100k/test
+
+names:
+  0: person
+  1: rider
+  2: car
+  3: bus
+  4: truck
+  5: bike
+  6: motor
+  7: traffic light
+  8: traffic sign
+  9: train
