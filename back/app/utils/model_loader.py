@@ -1,6 +1,8 @@
 import logging
 import os
+import threading
 
+import onnxruntime
 from app.models.low_light.diffusion_low_light import DiffusionLowLight
 from app.models.yolo26_bdd100k.yolo26_onnx import YOLO26ONNX
 from app.utils.image_processing import cv2_to_base64, detections_to_dict
@@ -9,6 +11,45 @@ logger = logging.getLogger(__name__)
 
 _low_light_model = None
 _yolo26_model = None
+_low_light_loaded = False
+_yolo26_loaded = False
+_thread_local = threading.local()
+
+
+def get_ort_execution_providers():
+    available = set(onnxruntime.get_available_providers())
+    preferred = []
+    allow_coreml = str(os.getenv("ENABLE_COREML", "")).strip().lower() in {"1", "true", "yes"}
+
+    for provider in (
+        "CUDAExecutionProvider",
+        "DmlExecutionProvider",
+        "CPUExecutionProvider",
+    ):
+        if provider in available:
+            preferred.append(provider)
+
+    if allow_coreml and "CoreMLExecutionProvider" in available:
+        insert_at = 1 if preferred and preferred[0] != "CPUExecutionProvider" else 0
+        preferred.insert(insert_at, "CoreMLExecutionProvider")
+
+    if not preferred:
+        preferred = ["CPUExecutionProvider"]
+
+    return preferred
+
+
+def is_gpu_accelerated():
+    providers = get_ort_execution_providers()
+    return any(provider != "CPUExecutionProvider" for provider in providers)
+
+
+def get_session_thread_config():
+    if is_gpu_accelerated():
+        return {"intra_op_num_threads": 0, "inter_op_num_threads": 0}
+
+    # For CPU parallel video processing, keep each session single-threaded to avoid oversubscription.
+    return {"intra_op_num_threads": 1, "inter_op_num_threads": 1}
 
 
 def check_model_file(model_path):
@@ -27,32 +68,64 @@ def get_static_model_path(*parts):
 
 
 def load_low_light_model():
-    global _low_light_model
-    if _low_light_model is None:
+    global _low_light_model, _low_light_loaded
+    if getattr(_thread_local, "low_light_model", None) is None:
         model_path = get_static_model_path("low_light", "diffusion_low_light_1x3x384x640.onnx")
         check_model_file(model_path)
-        _low_light_model = DiffusionLowLight(model_path)
+        _thread_local.low_light_model = DiffusionLowLight(
+            model_path,
+            providers=get_ort_execution_providers(),
+            **get_session_thread_config(),
+        )
+        _low_light_model = _thread_local.low_light_model
+        _low_light_loaded = True
         logger.info("低照度增强模型加载完成: %s", model_path)
-    return _low_light_model
+    return _thread_local.low_light_model
 
 
 def load_yolo26_model(conf_thres=0.25, iou_thres=0.45):
-    global _yolo26_model
-    if _yolo26_model is None:
+    global _yolo26_model, _yolo26_loaded
+    if getattr(_thread_local, "yolo26_model", None) is None:
         model_path = get_static_model_path("yolo26_bdd100k", "yolo26s.onnx")
         check_model_file(model_path)
-        _yolo26_model = YOLO26ONNX(model_path, conf_thres=conf_thres, iou_thres=iou_thres)
+        _thread_local.yolo26_model = YOLO26ONNX(
+            model_path,
+            conf_thres=conf_thres,
+            iou_thres=iou_thres,
+            providers=get_ort_execution_providers(),
+            **get_session_thread_config(),
+        )
+        _yolo26_model = _thread_local.yolo26_model
+        _yolo26_loaded = True
         logger.info("YOLO26 模型加载完成: %s", model_path)
-    _yolo26_model.conf_thres = conf_thres
-    _yolo26_model.iou_thres = iou_thres
-    return _yolo26_model
+    _thread_local.yolo26_model.conf_thres = conf_thres
+    _thread_local.yolo26_model.iou_thres = iou_thres
+    return _thread_local.yolo26_model
+
+
+def warmup_low_light_model():
+    load_low_light_model()
+    return threading.get_ident()
+
+
+def warmup_yolo26_model(conf_thres=0.25, iou_thres=0.45):
+    load_yolo26_model(conf_thres=conf_thres, iou_thres=iou_thres)
+    return threading.get_ident()
 
 
 def enhance_low_light(image):
+    result = enhance_low_light_raw(image)
+    return {
+        **result,
+        "image_base64": cv2_to_base64(result["image"]),
+    }
+
+
+def enhance_low_light_raw(image):
     model = load_low_light_model()
     output_image, timing = model.predict(image, return_timing=True)
     return {
-        "image_base64": cv2_to_base64(output_image),
+        "image": output_image,
         "timing_ms": timing,
         "image_shape": {
             "height": int(output_image.shape[0]),
@@ -62,11 +135,39 @@ def enhance_low_light(image):
     }
 
 
+def enhance_low_light_batch(images):
+    model = load_low_light_model()
+    output_images, timing = model.predict_batch(images, return_timing=True)
+    return {
+        "images": output_images,
+        "timing_ms": timing,
+        "batch_supported": bool(timing.get("batch_supported", False)),
+        "batch_size": int(timing.get("batch_size", len(images))),
+    }
+
+
+def low_light_batch_capability():
+    model = load_low_light_model()
+    return {
+        "supported": model.supports_batch(),
+        "max_batch_size": model.max_batch_size(),
+        "input_shape": list(model.input_shape),
+    }
+
+
 def detect_yolo26(image, conf_thres=0.25, iou_thres=0.45):
+    result = detect_yolo26_raw(image, conf_thres=conf_thres, iou_thres=iou_thres)
+    return {
+        **result,
+        "image_base64": cv2_to_base64(result["image"]),
+    }
+
+
+def detect_yolo26_raw(image, conf_thres=0.25, iou_thres=0.45):
     model = load_yolo26_model(conf_thres=conf_thres, iou_thres=iou_thres)
     output_image, detections, timing = model.predict(image, return_timing=True)
     return {
-        "image_base64": cv2_to_base64(output_image),
+        "image": output_image,
         "detections": detections_to_dict(detections, model.names),
         "count": int(len(detections)),
         "timing_ms": timing,
@@ -85,14 +186,17 @@ def get_model_status():
             "id": "low_light",
             "name": "Diffusion Low Light",
             "ready": os.path.exists(low_light_path),
-            "loaded": _low_light_model is not None,
+            "loaded": _low_light_loaded,
             "model_path": low_light_path,
+            "providers": get_ort_execution_providers(),
+            "batch": low_light_batch_capability() if _low_light_loaded else None,
         },
         {
             "id": "yolo26_bdd100k",
             "name": "YOLO26 BDD100K",
             "ready": os.path.exists(yolo_path),
-            "loaded": _yolo26_model is not None,
+            "loaded": _yolo26_loaded,
             "model_path": yolo_path,
+            "providers": get_ort_execution_providers(),
         },
     ]

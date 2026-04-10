@@ -52,13 +52,15 @@
             <ComparisonViewer
               :before-src="originalMediaUrl"
               :after-src="enhancedMediaUrl"
+              :before-kind="originalMediaKind"
+              :after-kind="enhancedMediaKind"
               before-label="原始图片"
               after-label="增强结果"
-              empty-text="上传图片后显示对比。"
+              :empty-text="emptyCompareText"
             />
           </div>
           <div class="pipeline-copy">
-            <h4>原始图片 / 增强结果</h4>
+            <h4>{{ compareOneTitle }}</h4>
           </div>
         </article>
 
@@ -68,17 +70,22 @@
             <ComparisonViewer
               :before-src="enhancedMediaUrl"
               :after-src="detectedMediaUrl"
+              :before-kind="enhancedMediaKind"
+              :after-kind="detectedMediaKind"
               before-label="增强结果"
               after-label="检测结果"
-              empty-text="处理完成后显示对比。"
+              :empty-text="processingCompareText"
             />
           </div>
           <div class="pipeline-copy">
-            <h4>增强结果 / 检测结果</h4>
+            <h4>{{ compareTwoTitle }}</h4>
           </div>
         </article>
       </div>
 
+      <p v-if="loading" class="message-info">
+        {{ loadingMessage }}
+      </p>
       <p v-if="errorMessage" class="message-error">{{ errorMessage }}</p>
     </section>
   </section>
@@ -101,17 +108,46 @@ const isPreviewVideo = computed(() => {
   return t.startsWith('video/')
 })
 
+const mediaType = computed(() => result.value?.media_type || (isPreviewVideo.value ? 'video' : 'image'))
+
+const originalMediaKind = computed(() => (isPreviewVideo.value ? 'video' : 'image'))
+const enhancedMediaKind = computed(() => mediaType.value)
+const detectedMediaKind = computed(() => mediaType.value)
+
+const compareOneTitle = computed(() =>
+  mediaType.value === 'video' ? '原始视频 / 增强视频' : '原始图片 / 增强结果',
+)
+
+const compareTwoTitle = computed(() =>
+  mediaType.value === 'video' ? '增强视频 / 检测视频' : '增强结果 / 检测结果',
+)
+
+const emptyCompareText = computed(() =>
+  isPreviewVideo.value ? '上传视频后显示对比。' : '上传图片后显示对比。',
+)
+
+const processingCompareText = computed(() =>
+  isPreviewVideo.value ? '视频处理完成后显示对比。' : '处理完成后显示对比。',
+)
+
+const loadingMessage = computed(() =>
+  isPreviewVideo.value ? '视频逐帧处理中，请等待结果导出。' : '图片处理中，请稍候。',
+)
+
 const originalMediaUrl = computed(() => {
+  if (result.value?.upload_media) return resolveAssetUrl(result.value.upload_media)
   if (result.value?.upload_image) return resolveAssetUrl(result.value.upload_image)
   return localPreviewUrl.value
 })
 
 const enhancedMediaUrl = computed(() => {
+  if (result.value?.enhanced_media) return resolveAssetUrl(result.value.enhanced_media)
   if (!result.value?.enhanced_image) return ''
   return resolveAssetUrl(result.value.enhanced_image)
 })
 
 const detectedMediaUrl = computed(() => {
+  if (result.value?.result_media) return resolveAssetUrl(result.value.result_media)
   if (!result.value?.result_image) return ''
   return resolveAssetUrl(result.value.result_image)
 })
@@ -435,6 +471,18 @@ onBeforeUnmount(() => {
   animation: message-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.message-info {
+  position: relative;
+  z-index: 1;
+  margin: 18px 0 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  color: rgba(226, 232, 240, 0.92);
+  background: rgba(14, 116, 144, 0.22);
+  border: 1px solid rgba(103, 232, 249, 0.2);
+  animation: message-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes message-in {
   from {
     opacity: 0;
@@ -477,7 +525,8 @@ onBeforeUnmount(() => {
     animation: none;
   }
 
-  .message-error {
+  .message-error,
+  .message-info {
     animation: none;
   }
 

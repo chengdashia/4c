@@ -6,7 +6,7 @@ class BaseConfig:
     JSON_AS_ASCII = False
     RESTX_MASK_SWAGGER = False
     SWAGGER_UI_DOC_EXPANSION = "list"
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+    MAX_CONTENT_LENGTH = 256 * 1024 * 1024
 
 
 class DevelopmentConfig(BaseConfig):

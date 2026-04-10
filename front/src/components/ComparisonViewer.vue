@@ -12,7 +12,9 @@
         <div class="comparison-layer base-layer">
           <component
             :is="beforeTag"
+            ref="beforeMediaRef"
             v-if="beforeSrc"
+            :key="`${beforeTag}:${beforeSrc}`"
             :src="beforeSrc"
             class="comparison-asset"
             :controls="beforeTag === 'video'"
@@ -20,6 +22,12 @@
             muted
             loop
             playsinline
+            preload="metadata"
+            @loadedmetadata="syncFromBefore"
+            @play="syncFromBefore"
+            @pause="syncFromBefore"
+            @seeking="syncFromBefore"
+            @timeupdate="syncFromBefore"
           />
           <div v-else class="comparison-empty">等待基准画面</div>
         </div>
@@ -27,7 +35,9 @@
         <div class="comparison-layer reveal-layer" :style="{ clipPath: `inset(0 0 0 ${position}%)` }">
           <component
             :is="afterTag"
+            ref="afterMediaRef"
             v-if="afterSrc"
+            :key="`${afterTag}:${afterSrc}`"
             :src="afterSrc"
             class="comparison-asset"
             :controls="afterTag === 'video'"
@@ -35,6 +45,8 @@
             muted
             loop
             playsinline
+            preload="metadata"
+            @loadedmetadata="syncFromBefore"
           />
           <div v-else class="comparison-empty">等待处理结果</div>
         </div>
@@ -58,7 +70,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   beforeSrc: { type: String, default: '' },
@@ -71,11 +83,15 @@ const props = defineProps({
 })
 
 const containerRef = ref(null)
+const beforeMediaRef = ref(null)
+const afterMediaRef = ref(null)
 const position = ref(52)
 const dragging = ref(false)
+const syncing = ref(false)
 
 const beforeTag = computed(() => (props.beforeKind === 'video' ? 'video' : 'img'))
 const afterTag = computed(() => (props.afterKind === 'video' ? 'video' : 'img'))
+const isVideoComparison = computed(() => beforeTag.value === 'video' && afterTag.value === 'video')
 
 function updatePosition(event) {
   if (!containerRef.value) return
@@ -100,6 +116,42 @@ function stopDrag(event) {
   dragging.value = false
   event.currentTarget?.releasePointerCapture?.(event.pointerId)
 }
+
+function syncFromBefore() {
+  if (!isVideoComparison.value || syncing.value) return
+
+  const before = beforeMediaRef.value
+  const after = afterMediaRef.value
+  if (!before || !after) return
+
+  syncing.value = true
+
+  try {
+    if (Math.abs((before.currentTime || 0) - (after.currentTime || 0)) > 0.08) {
+      after.currentTime = before.currentTime || 0
+    }
+
+    if (before.paused) {
+      after.pause()
+    } else {
+      const promise = after.play?.()
+      if (promise?.catch) promise.catch(() => {})
+    }
+  } finally {
+    window.requestAnimationFrame(() => {
+      syncing.value = false
+    })
+  }
+}
+
+watch(
+  () => [props.beforeSrc, props.afterSrc, props.beforeKind, props.afterKind],
+  () => {
+    if (isVideoComparison.value) {
+      window.requestAnimationFrame(syncFromBefore)
+    }
+  },
+)
 </script>
 
 <style scoped>

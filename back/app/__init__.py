@@ -11,6 +11,7 @@ import config
 import homepage_media
 from app.utils.image_codec import ImageDecodeError
 from app.utils.model_loader import get_model_status
+from app.utils.video_processing import VideoProcessingError
 
 api = Api(
     version="1.0",
@@ -72,10 +73,14 @@ def create_app():
 
     @app.errorhandler(413)
     def file_too_large(_error):
-        return jsonify({"code": 413, "message": "上传文件过大，最大支持 16MB"}), 413
+        return jsonify({"code": 413, "message": "上传文件过大，最大支持 256MB"}), 413
 
     @app.errorhandler(ImageDecodeError)
     def image_decode_error(error):
+        return jsonify({"code": 400, "message": str(error)}), 400
+
+    @app.errorhandler(VideoProcessingError)
+    def video_processing_error(error):
         return jsonify({"code": 400, "message": str(error)}), 400
 
     @app.errorhandler(FileNotFoundError)

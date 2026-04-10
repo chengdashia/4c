@@ -7,14 +7,20 @@ import onnxruntime
 
 
 class YOLO26ONNX:
-    def __init__(self, model_path, conf_thres=0.25, iou_thres=0.45, providers=None):
-        session_options = onnxruntime.SessionOptions()
-        session_options.log_severity_level = 3
-        self.onnx_session = onnxruntime.InferenceSession(
-            model_path,
-            sess_options=session_options,
-            providers=providers or ["CPUExecutionProvider"],
-        )
+    def __init__(
+        self,
+        model_path,
+        conf_thres=0.25,
+        iou_thres=0.45,
+        providers=None,
+        intra_op_num_threads=0,
+        inter_op_num_threads=0,
+    ):
+        self.model_path = model_path
+        self.providers = providers or ["CPUExecutionProvider"]
+        self.intra_op_num_threads = intra_op_num_threads
+        self.inter_op_num_threads = inter_op_num_threads
+        self.onnx_session = self._create_session(self.providers)
         self.input_name = self.onnx_session.get_inputs()[0].name
         self.output_names = [output.name for output in self.onnx_session.get_outputs()]
 
@@ -30,6 +36,27 @@ class YOLO26ONNX:
 
         self.conf_thres = conf_thres
         self.iou_thres = iou_thres
+
+    def _create_session(self, providers):
+        session_options = onnxruntime.SessionOptions()
+        session_options.log_severity_level = 3
+        if self.intra_op_num_threads > 0:
+            session_options.intra_op_num_threads = self.intra_op_num_threads
+        if self.inter_op_num_threads > 0:
+            session_options.inter_op_num_threads = self.inter_op_num_threads
+        return onnxruntime.InferenceSession(
+            self.model_path,
+            sess_options=session_options,
+            providers=providers,
+        )
+
+    def _fallback_to_cpu(self):
+        if self.providers == ["CPUExecutionProvider"]:
+            raise RuntimeError("CPU provider fallback unavailable")
+        self.providers = ["CPUExecutionProvider"]
+        self.onnx_session = self._create_session(self.providers)
+        self.input_name = self.onnx_session.get_inputs()[0].name
+        self.output_names = [output.name for output in self.onnx_session.get_outputs()]
 
     @staticmethod
     def _parse_literal(value, default=None):
@@ -200,7 +227,11 @@ class YOLO26ONNX:
         input_image, ratio, pad = self.prepare_input(image)
         preprocess_time = time.perf_counter()
 
-        outputs = self.onnx_session.run(self.output_names, {self.input_name: input_image})
+        try:
+            outputs = self.onnx_session.run(self.output_names, {self.input_name: input_image})
+        except Exception:
+            self._fallback_to_cpu()
+            outputs = self.onnx_session.run(self.output_names, {self.input_name: input_image})
         inference_time = time.perf_counter()
 
         detections = self.postprocess(outputs, image.shape, ratio, pad)

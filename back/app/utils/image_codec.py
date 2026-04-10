@@ -54,8 +54,19 @@ def encode_image_to_base64(image):
     return base64.b64encode(encoded.tobytes()).decode("utf-8")
 
 
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
-ALLOWED_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg"}
+VIDEO_EXTENSIONS = {"mp4", "mov", "avi", "m4v", "webm"}
+ALLOWED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+
+IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+VIDEO_MIME_TYPES = {
+    "video/mp4",
+    "video/quicktime",
+    "video/x-msvideo",
+    "video/webm",
+    "video/x-m4v",
+}
+ALLOWED_MIME_TYPES = IMAGE_MIME_TYPES | VIDEO_MIME_TYPES
 
 
 def allowed_file(filename):
@@ -64,6 +75,13 @@ def allowed_file(filename):
 
 def allowed_mime_type(mime_type):
     return mime_type in ALLOWED_MIME_TYPES
+
+
+def infer_media_type(filename="", mime_type=""):
+    extension = filename.rsplit(".", 1)[1].lower() if "." in filename else ""
+    if mime_type in VIDEO_MIME_TYPES or extension in VIDEO_EXTENSIONS:
+        return "video"
+    return "image"
 
 
 def decode_base64_to_image(base64_data):

@@ -11,13 +11,49 @@
       </div>
 
       <div class="pipeline-track">
-        <article v-for="panel in displayPanels" :key="panel.key" class="pipeline-card">
-          <div class="pipeline-step">{{ panel.step }}</div>
-          <div class="pipeline-media">
-            <component :is="panel.tag" :src="panel.mediaSrc" class="pipeline-asset" v-bind="panel.mediaProps" />
+        <article class="pipeline-card">
+          <div class="pipeline-step">{{ rawPanel.step }}</div>
+          <div class="pipeline-media pipeline-media--upload">
+            <component :is="rawPanel.tag" :src="rawPanel.mediaSrc" class="pipeline-asset" v-bind="rawPanel.mediaProps" />
           </div>
           <div class="pipeline-copy">
-            <h4>{{ panel.title }}</h4>
+            <h4>{{ rawPanel.title }}</h4>
+          </div>
+        </article>
+
+        <article class="pipeline-card">
+          <div class="pipeline-step">Compare 01</div>
+          <div class="pipeline-media pipeline-media--compare">
+            <ComparisonViewer
+              :before-src="rawPanel.mediaSrc"
+              :after-src="enhancedPanel.mediaSrc"
+              :before-kind="rawPanel.kind"
+              :after-kind="enhancedPanel.kind"
+              before-label="原始输入"
+              after-label="增强输出"
+              empty-text="等待媒体内容"
+            />
+          </div>
+          <div class="pipeline-copy">
+            <h4>原始输入 / 增强输出</h4>
+          </div>
+        </article>
+
+        <article class="pipeline-card">
+          <div class="pipeline-step">Compare 02</div>
+          <div class="pipeline-media pipeline-media--compare">
+            <ComparisonViewer
+              :before-src="enhancedPanel.mediaSrc"
+              :after-src="detectedPanel.mediaSrc"
+              :before-kind="enhancedPanel.kind"
+              :after-kind="detectedPanel.kind"
+              before-label="增强输出"
+              after-label="检测输出"
+              empty-text="等待媒体内容"
+            />
+          </div>
+          <div class="pipeline-copy">
+            <h4>增强输出 / 检测输出</h4>
           </div>
         </article>
       </div>
@@ -27,6 +63,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import ComparisonViewer from '../components/ComparisonViewer.vue'
 import { fetchHomepageMedia, resolveAssetUrl } from '../services/api'
 
 const fallbackPanels = [
@@ -64,14 +101,20 @@ const displayPanels = computed(() => {
       key: panel.key || fallbackPanel.key || `stage-${index + 1}`,
       step: panel.step || fallbackPanel.step || `Stage 0${index + 1}`,
       title: panel.title || fallbackPanel.title || '',
+      kind: mediaType,
       tag: mediaType === 'video' ? 'video' : 'img',
       mediaSrc: resolveMedia(hasValidSrc ? panel.src : fallbackPanel.src),
-      mediaProps: mediaType === 'video'
-        ? { autoplay: true, muted: true, loop: true, playsinline: true, controls: true }
-        : { alt: panel.title || fallbackPanel.title || '' },
+      mediaProps:
+        mediaType === 'video'
+          ? { autoplay: true, muted: true, loop: true, playsinline: true, preload: 'metadata', controls: true }
+          : { alt: panel.title || fallbackPanel.title || '' },
     }
   })
 })
+
+const rawPanel = computed(() => displayPanels.value[0] || fallbackPanels[0])
+const enhancedPanel = computed(() => displayPanels.value[1] || fallbackPanels[1])
+const detectedPanel = computed(() => displayPanels.value[2] || fallbackPanels[2])
 
 function resolveMedia(src) {
   if (!src) return ''
@@ -148,6 +191,7 @@ onMounted(() => {
   font-weight: 500;
   letter-spacing: -0.02em;
   color: rgba(248, 250, 252, 0.92);
+  text-align: center;
 }
 
 .pipeline-track {
@@ -156,10 +200,13 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
+  align-items: stretch;
 }
 
 .pipeline-card {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: start;
   gap: 16px;
   padding: 18px;
   border-radius: 22px;
@@ -200,14 +247,36 @@ onMounted(() => {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgba(148, 163, 184, 0.8);
+  text-align: center;
 }
 
 .pipeline-media {
   overflow: hidden;
-  border-radius: 18px;
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
   aspect-ratio: 4 / 3;
+  border-radius: 18px;
   background: rgba(2, 6, 23, 0.65);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  place-self: center;
+}
+
+.pipeline-media--compare,
+.pipeline-media--upload {
+  position: relative;
+}
+
+.pipeline-media--compare :deep(.comparison-viewer) {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+}
+
+.pipeline-media--compare :deep(.comparison-stage) {
+  min-height: 0;
+  height: 100%;
+  border-radius: 18px;
 }
 
 .pipeline-asset {
