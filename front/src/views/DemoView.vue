@@ -6,7 +6,17 @@
           <p class="section-tag">Pipeline Overview</p>
         </div>
         <div class="pipeline-actions">
-          <span class="status-pill">Input → Enhance → Detect</span>
+          <button
+            v-for="option in pipelineOptions"
+            :key="option.value"
+            class="mode-button"
+            :class="{ 'is-active': pipelineMode === option.value }"
+            type="button"
+            @click="setPipelineMode(option.value)"
+          >
+            {{ option.label }}
+          </button>
+          <span class="status-pill">{{ activePipeline.status }}</span>
         </div>
       </div>
 
@@ -54,8 +64,8 @@
               :after-src="enhancedMediaUrl"
               :before-kind="originalMediaKind"
               :after-kind="enhancedMediaKind"
-              before-label="原始图片"
-              after-label="增强结果"
+              before-label="原始输入"
+              :after-label="activePipeline.middleLabel"
               :empty-text="emptyCompareText"
             />
           </div>
@@ -72,7 +82,7 @@
               :after-src="detectedMediaUrl"
               :before-kind="enhancedMediaKind"
               :after-kind="detectedMediaKind"
-              before-label="增强结果"
+              :before-label="activePipeline.middleLabel"
               after-label="检测结果"
               :empty-text="processingCompareText"
             />
@@ -94,7 +104,44 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ComparisonViewer from '../components/ComparisonViewer.vue'
-import { resolveAssetUrl, runVisionPipeline } from '../services/api'
+import { resolveAssetUrl, runDehazePipeline, runVisionPipeline } from '../services/api'
+
+const pipelineOptions = [
+  {
+    value: 'enhance',
+    label: '增强识别',
+    status: 'Input → Enhance → Detect',
+    middleLabel: '增强结果',
+    compareOneImage: '原始图片 / 增强结果',
+    compareOneVideo: '原始视频 / 增强视频',
+    compareTwoImage: '增强结果 / 检测结果',
+    compareTwoVideo: '增强视频 / 检测视频',
+    emptyImage: '上传图片后显示增强对比。',
+    emptyVideo: '上传视频后显示增强对比。',
+    processingImage: '处理完成后显示检测对比。',
+    processingVideo: '视频处理完成后显示检测对比。',
+    loadingImage: '图片增强与识别中，请稍候。',
+    loadingVideo: '视频逐帧增强与识别中，请等待结果导出。',
+    runner: runVisionPipeline,
+  },
+  {
+    value: 'dehaze',
+    label: '去雾识别',
+    status: 'Input → Dehaze → Detect',
+    middleLabel: '去雾结果',
+    compareOneImage: '原始图片 / 去雾结果',
+    compareOneVideo: '原始视频 / 去雾视频',
+    compareTwoImage: '去雾结果 / 检测结果',
+    compareTwoVideo: '去雾视频 / 检测视频',
+    emptyImage: '上传图片后显示去雾对比。',
+    emptyVideo: '上传视频后显示去雾对比。',
+    processingImage: '处理完成后显示检测对比。',
+    processingVideo: '视频处理完成后显示检测对比。',
+    loadingImage: '图片去雾与识别中，请稍候。',
+    loadingVideo: '视频逐帧去雾与识别中，请等待结果导出。',
+    runner: runDehazePipeline,
+  },
+]
 
 const loading = ref(false)
 const selectedFile = ref(null)
@@ -102,6 +149,9 @@ const result = ref(null)
 const errorMessage = ref('')
 const localPreviewUrl = ref('')
 const dragOverUpload = ref(false)
+const pipelineMode = ref('enhance')
+
+const activePipeline = computed(() => pipelineOptions.find((option) => option.value === pipelineMode.value) || pipelineOptions[0])
 
 const isPreviewVideo = computed(() => {
   const t = selectedFile.value?.type || ''
@@ -115,23 +165,23 @@ const enhancedMediaKind = computed(() => mediaType.value)
 const detectedMediaKind = computed(() => mediaType.value)
 
 const compareOneTitle = computed(() =>
-  mediaType.value === 'video' ? '原始视频 / 增强视频' : '原始图片 / 增强结果',
+  mediaType.value === 'video' ? activePipeline.value.compareOneVideo : activePipeline.value.compareOneImage,
 )
 
 const compareTwoTitle = computed(() =>
-  mediaType.value === 'video' ? '增强视频 / 检测视频' : '增强结果 / 检测结果',
+  mediaType.value === 'video' ? activePipeline.value.compareTwoVideo : activePipeline.value.compareTwoImage,
 )
 
 const emptyCompareText = computed(() =>
-  isPreviewVideo.value ? '上传视频后显示对比。' : '上传图片后显示对比。',
+  isPreviewVideo.value ? activePipeline.value.emptyVideo : activePipeline.value.emptyImage,
 )
 
 const processingCompareText = computed(() =>
-  isPreviewVideo.value ? '视频处理完成后显示对比。' : '处理完成后显示对比。',
+  isPreviewVideo.value ? activePipeline.value.processingVideo : activePipeline.value.processingImage,
 )
 
 const loadingMessage = computed(() =>
-  isPreviewVideo.value ? '视频逐帧处理中，请等待结果导出。' : '图片处理中，请稍候。',
+  isPreviewVideo.value ? activePipeline.value.loadingVideo : activePipeline.value.loadingImage,
 )
 
 const originalMediaUrl = computed(() => {
@@ -175,6 +225,16 @@ function pickUploadFile(file) {
   submitPipeline()
 }
 
+function setPipelineMode(mode) {
+  if (pipelineMode.value === mode) return
+  pipelineMode.value = mode
+  result.value = null
+  errorMessage.value = ''
+  if (selectedFile.value) {
+    submitPipeline()
+  }
+}
+
 function handleFileChange(event) {
   const [file] = event.target.files || []
   pickUploadFile(file)
@@ -200,7 +260,7 @@ async function submitPipeline() {
   errorMessage.value = ''
 
   try {
-    result.value = await runVisionPipeline({
+    result.value = await activePipeline.value.runner({
       file: selectedFile.value,
     })
   } catch (error) {
@@ -263,6 +323,29 @@ onBeforeUnmount(() => {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.mode-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(226, 232, 240, 0.78);
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition:
+    border-color 0.3s ease,
+    background 0.3s ease,
+    color 0.3s ease;
+}
+
+.mode-button:hover,
+.mode-button.is-active {
+  border-color: rgba(125, 211, 252, 0.55);
+  background: rgba(14, 116, 144, 0.24);
+  color: rgba(248, 250, 252, 0.94);
 }
 
 .pipeline-track {

@@ -3,6 +3,7 @@ import os
 import threading
 
 import onnxruntime
+from app.models.c2pnet.c2pnet_onnx import C2PNetONNX
 from app.models.low_light.diffusion_low_light import DiffusionLowLight
 from app.models.yolo26_bdd100k.yolo26_onnx import YOLO26ONNX
 from app.utils.image_processing import cv2_to_base64, detections_to_dict
@@ -11,8 +12,10 @@ logger = logging.getLogger(__name__)
 
 _low_light_model = None
 _yolo26_model = None
+_c2pnet_model = None
 _low_light_loaded = False
 _yolo26_loaded = False
+_c2pnet_loaded = False
 _thread_local = threading.local()
 
 
@@ -103,6 +106,22 @@ def load_yolo26_model(conf_thres=0.25, iou_thres=0.45):
     return _thread_local.yolo26_model
 
 
+def load_c2pnet_model():
+    global _c2pnet_model, _c2pnet_loaded
+    if getattr(_thread_local, "c2pnet_model", None) is None:
+        model_path = get_static_model_path("c2p", "c2pnet_outdoor_640x640.onnx")
+        check_model_file(model_path)
+        _thread_local.c2pnet_model = C2PNetONNX(
+            model_path,
+            providers=get_ort_execution_providers(),
+            **get_session_thread_config(),
+        )
+        _c2pnet_model = _thread_local.c2pnet_model
+        _c2pnet_loaded = True
+        logger.info("C2PNet 去雾模型加载完成: %s", model_path)
+    return _thread_local.c2pnet_model
+
+
 def warmup_low_light_model():
     load_low_light_model()
     return threading.get_ident()
@@ -110,6 +129,11 @@ def warmup_low_light_model():
 
 def warmup_yolo26_model(conf_thres=0.25, iou_thres=0.45):
     load_yolo26_model(conf_thres=conf_thres, iou_thres=iou_thres)
+    return threading.get_ident()
+
+
+def warmup_c2pnet_model():
+    load_c2pnet_model()
     return threading.get_ident()
 
 
@@ -155,6 +179,28 @@ def low_light_batch_capability():
     }
 
 
+def dehaze_c2pnet(image):
+    result = dehaze_c2pnet_raw(image)
+    return {
+        **result,
+        "image_base64": cv2_to_base64(result["image"]),
+    }
+
+
+def dehaze_c2pnet_raw(image):
+    model = load_c2pnet_model()
+    output_image, timing = model.predict(image, return_timing=True)
+    return {
+        "image": output_image,
+        "timing_ms": timing,
+        "image_shape": {
+            "height": int(output_image.shape[0]),
+            "width": int(output_image.shape[1]),
+            "channels": int(output_image.shape[2]),
+        },
+    }
+
+
 def detect_yolo26(image, conf_thres=0.25, iou_thres=0.45):
     result = detect_yolo26_raw(image, conf_thres=conf_thres, iou_thres=iou_thres)
     return {
@@ -181,6 +227,7 @@ def detect_yolo26_raw(image, conf_thres=0.25, iou_thres=0.45):
 def get_model_status():
     low_light_path = get_static_model_path("low_light", "diffusion_low_light_1x3x384x640.onnx")
     yolo_path = get_static_model_path("yolo26_bdd100k", "yolo26s.onnx")
+    c2pnet_path = get_static_model_path("c2p", "c2pnet_outdoor_640x640.onnx")
     return [
         {
             "id": "low_light",
@@ -197,6 +244,14 @@ def get_model_status():
             "ready": os.path.exists(yolo_path),
             "loaded": _yolo26_loaded,
             "model_path": yolo_path,
+            "providers": get_ort_execution_providers(),
+        },
+        {
+            "id": "c2pnet",
+            "name": "C2PNet Dehaze",
+            "ready": os.path.exists(c2pnet_path),
+            "loaded": _c2pnet_loaded,
+            "model_path": c2pnet_path,
             "providers": get_ort_execution_providers(),
         },
     ]
