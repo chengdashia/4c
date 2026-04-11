@@ -131,7 +131,8 @@
         </div>
       </div>
 
-      <div class="film-strip">
+      <div ref="filmStripWrapRef" class="film-strip-wrap">
+        <div ref="filmStripRef" class="film-strip" @scroll.passive="updateFilmScrollBar">
         <article
           v-for="(step, index) in displaySteps"
           :key="`${step.key}-film-${index}`"
@@ -175,8 +176,14 @@
               playsinline
               controls
               preload="auto"
+              @loadeddata="updateFilmScrollBar"
             />
-            <img v-else-if="step.src" :src="step.src" :alt="step.label" />
+            <img
+              v-else-if="step.src"
+              :src="step.src"
+              :alt="step.label"
+              @load="updateFilmScrollBar"
+            />
             <label v-else class="film-upload-hit" for="demo-film-upload-input">
               <span class="film-upload-title">点击或拖入文件</span>
               <span class="film-upload-sub">{{ mediaLabel }} · 支持识别、去雾、去雨与低光链路</span>
@@ -195,11 +202,32 @@
               playsinline
               controls
               preload="auto"
+              @loadeddata="updateFilmScrollBar"
             />
-            <img v-else-if="step.src" :src="step.src" :alt="step.label" />
+            <img
+              v-else-if="step.src"
+              :src="step.src"
+              :alt="step.label"
+              @load="updateFilmScrollBar"
+            />
             <span v-else class="film-placeholder">{{ step.empty }}</span>
           </div>
         </article>
+        </div>
+        <div class="film-scroll-persistent" aria-hidden="true">
+          <div
+            ref="filmScrollTrackRef"
+            class="film-scroll-persistent-track"
+            @pointerdown="onFilmTrackPointerDown"
+          >
+            <div
+              class="film-scroll-persistent-thumb"
+              :class="{ 'is-inactive': filmBar.inactive }"
+              :style="filmThumbStyle"
+              @pointerdown.stop="onFilmThumbPointerDown"
+            />
+          </div>
+        </div>
       </div>
 
       <p v-if="errorMessage" class="film-error">{{ errorMessage }}</p>
@@ -233,7 +261,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   fileFromAssetUrl,
   resolveAssetUrl,
@@ -319,6 +347,18 @@ const flowModules = ref(['low-light', 'derain', 'detect'])
 const dragPayload = ref(null)
 const liveSteps = ref(null)
 
+const filmStripWrapRef = ref(null)
+const filmStripRef = ref(null)
+const filmScrollTrackRef = ref(null)
+const filmBar = ref({ thumbW: 0, thumbLeft: 0, inactive: true })
+let filmStripResizeObserver = null
+let filmThumbDrag = { active: false, startX: 0, startScroll: 0 }
+
+const filmThumbStyle = computed(() => ({
+  width: `${filmBar.value.thumbW}px`,
+  transform: `translateX(${filmBar.value.thumbLeft}px)`,
+}))
+
 const isPreviewVideo = computed(() => (selectedFile.value?.type || '').startsWith('video/'))
 const mediaKind = computed(() => (isPreviewVideo.value ? 'video' : 'image'))
 const mediaLabel = computed(() => (isPreviewVideo.value ? '视频' : '图片'))
@@ -367,6 +407,104 @@ const displaySteps = computed(() => {
   if (liveSteps.value?.length) return liveSteps.value
   if (result.value?.steps?.length) return result.value.steps
   return buildEmptySteps()
+})
+
+function updateFilmScrollBar() {
+  const strip = filmStripRef.value
+  const track = filmScrollTrackRef.value
+  if (!strip || !track) return
+
+  const trackW = track.clientWidth
+  if (trackW <= 0) return
+
+  const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth)
+  if (maxScroll <= 0) {
+    filmBar.value = {
+      thumbW: trackW,
+      thumbLeft: 0,
+      inactive: true,
+    }
+    return
+  }
+
+  const thumbW = Math.max(40, (strip.clientWidth / strip.scrollWidth) * trackW)
+  const maxThumbLeft = Math.max(0, trackW - thumbW)
+  const thumbLeft = maxThumbLeft * (strip.scrollLeft / maxScroll)
+  filmBar.value = {
+    thumbW,
+    thumbLeft,
+    inactive: false,
+  }
+}
+
+function onFilmTrackPointerDown(event) {
+  if (event.button !== 0) return
+  if (event.target?.classList?.contains('film-scroll-persistent-thumb')) return
+  const strip = filmStripRef.value
+  const track = filmScrollTrackRef.value
+  if (!strip || !track || filmBar.value.inactive) return
+
+  const rect = track.getBoundingClientRect()
+  const ratio = (event.clientX - rect.left) / rect.width
+  const maxScroll = strip.scrollWidth - strip.clientWidth
+  strip.scrollLeft = ratio * maxScroll
+  updateFilmScrollBar()
+}
+
+function onFilmThumbPointerDown(event) {
+  if (filmBar.value.inactive) return
+  event.preventDefault()
+  const strip = filmStripRef.value
+  if (!strip) return
+
+  filmThumbDrag = {
+    active: true,
+    startX: event.clientX,
+    startScroll: strip.scrollLeft,
+  }
+
+  const move = (e) => {
+    if (!filmThumbDrag.active) return
+    const track = filmScrollTrackRef.value
+    if (!track || !strip) return
+    const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth)
+    const trackW = track.clientWidth
+    const thumbW = filmBar.value.thumbW
+    const maxThumbLeft = Math.max(0, trackW - thumbW)
+    if (maxThumbLeft <= 0 || maxScroll <= 0) return
+    const dx = e.clientX - filmThumbDrag.startX
+    const nextScroll = filmThumbDrag.startScroll + (dx / maxThumbLeft) * maxScroll
+    strip.scrollLeft = Math.min(maxScroll, Math.max(0, nextScroll))
+    updateFilmScrollBar()
+  }
+
+  const up = () => {
+    filmThumbDrag.active = false
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', up)
+  }
+
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', up)
+}
+
+watch(
+  () => [displaySteps.value.length, displaySteps.value.map((s) => s.src).join('|')],
+  () => nextTick(() => updateFilmScrollBar()),
+)
+
+watch(loading, () => nextTick(() => updateFilmScrollBar()))
+
+onMounted(() => {
+  nextTick(() => updateFilmScrollBar())
+  const wrap = filmStripWrapRef.value
+  if (wrap && typeof ResizeObserver !== 'undefined') {
+    filmStripResizeObserver = new ResizeObserver(() => updateFilmScrollBar())
+    filmStripResizeObserver.observe(wrap)
+  }
+  window.addEventListener('resize', updateFilmScrollBar)
 })
 
 const summaryItems = computed(() => {
@@ -591,6 +729,9 @@ async function submitPipeline() {
 }
 
 onBeforeUnmount(() => {
+  filmStripResizeObserver?.disconnect()
+  filmStripResizeObserver = null
+  window.removeEventListener('resize', updateFilmScrollBar)
   revokePreview()
 })
 </script>
@@ -1136,12 +1277,61 @@ onBeforeUnmount(() => {
   color: #f8fafc;
 }
 
+.film-strip-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .film-strip {
   display: flex;
   gap: 14px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: 2px;
   scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.film-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.film-scroll-persistent {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 0 2px;
+}
+
+.film-scroll-persistent-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.film-scroll-persistent-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.45), rgba(94, 234, 212, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-sizing: border-box;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 0.2s ease;
+}
+
+.film-scroll-persistent-thumb.is-inactive {
+  cursor: default;
+}
+
+.film-scroll-persistent-thumb:active:not(.is-inactive) {
+  cursor: grabbing;
 }
 
 .film-card {
