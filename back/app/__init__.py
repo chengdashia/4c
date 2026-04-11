@@ -38,12 +38,16 @@ def create_app():
 
     from .routes.c2pnet import c2pnet_file_ns
     from .routes.dehaze_pipeline import dehaze_pipeline_file_ns
+    from .routes.lightweight_low_light import lightweight_low_light_file_ns
+    from .routes.lightweight_pipeline import lightweight_pipeline_file_ns
     from .routes.low_light import low_light_file_ns
     from .routes.pipeline import pipeline_file_ns
     from .routes.yolo26_bdd100k import yolo26_file_ns
 
     api.add_namespace(c2pnet_file_ns, path="/api/c2pnet_file")
     api.add_namespace(dehaze_pipeline_file_ns, path="/api/dehaze_pipeline_file")
+    api.add_namespace(lightweight_low_light_file_ns, path="/api/lightweight_low_light_file")
+    api.add_namespace(lightweight_pipeline_file_ns, path="/api/lightweight_pipeline_file")
     api.add_namespace(low_light_file_ns, path="/api/low_light_file")
     api.add_namespace(yolo26_file_ns, path="/api/yolo26_bdd100k_file")
     api.add_namespace(pipeline_file_ns, path="/api/pipeline_file")

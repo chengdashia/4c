@@ -4,6 +4,7 @@ import threading
 
 import onnxruntime
 from app.models.c2pnet.c2pnet_onnx import C2PNetONNX
+from app.models.lightweight_low_light.lyt_net_onnx import LYTNetONNX
 from app.models.low_light.diffusion_low_light import DiffusionLowLight
 from app.models.yolo26_bdd100k.yolo26_onnx import YOLO26ONNX
 from app.utils.image_processing import cv2_to_base64, detections_to_dict
@@ -13,9 +14,11 @@ logger = logging.getLogger(__name__)
 _low_light_model = None
 _yolo26_model = None
 _c2pnet_model = None
+_lightweight_low_light_model = None
 _low_light_loaded = False
 _yolo26_loaded = False
 _c2pnet_loaded = False
+_lightweight_low_light_loaded = False
 _thread_local = threading.local()
 
 
@@ -122,6 +125,22 @@ def load_c2pnet_model():
     return _thread_local.c2pnet_model
 
 
+def load_lightweight_low_light_model():
+    global _lightweight_low_light_model, _lightweight_low_light_loaded
+    if getattr(_thread_local, "lightweight_low_light_model", None) is None:
+        model_path = get_static_model_path("low_light", "lyt_net_lolv2_real_640x360.onnx")
+        check_model_file(model_path)
+        _thread_local.lightweight_low_light_model = LYTNetONNX(
+            model_path,
+            providers=get_ort_execution_providers(),
+            **get_session_thread_config(),
+        )
+        _lightweight_low_light_model = _thread_local.lightweight_low_light_model
+        _lightweight_low_light_loaded = True
+        logger.info("轻量化低照度增强模型加载完成: %s", model_path)
+    return _thread_local.lightweight_low_light_model
+
+
 def warmup_low_light_model():
     load_low_light_model()
     return threading.get_ident()
@@ -137,6 +156,11 @@ def warmup_c2pnet_model():
     return threading.get_ident()
 
 
+def warmup_lightweight_low_light_model():
+    load_lightweight_low_light_model()
+    return threading.get_ident()
+
+
 def enhance_low_light(image):
     result = enhance_low_light_raw(image)
     return {
@@ -147,6 +171,28 @@ def enhance_low_light(image):
 
 def enhance_low_light_raw(image):
     model = load_low_light_model()
+    output_image, timing = model.predict(image, return_timing=True)
+    return {
+        "image": output_image,
+        "timing_ms": timing,
+        "image_shape": {
+            "height": int(output_image.shape[0]),
+            "width": int(output_image.shape[1]),
+            "channels": int(output_image.shape[2]),
+        },
+    }
+
+
+def enhance_lightweight_low_light(image):
+    result = enhance_lightweight_low_light_raw(image)
+    return {
+        **result,
+        "image_base64": cv2_to_base64(result["image"]),
+    }
+
+
+def enhance_lightweight_low_light_raw(image):
+    model = load_lightweight_low_light_model()
     output_image, timing = model.predict(image, return_timing=True)
     return {
         "image": output_image,
@@ -228,6 +274,7 @@ def get_model_status():
     low_light_path = get_static_model_path("low_light", "diffusion_low_light_1x3x384x640.onnx")
     yolo_path = get_static_model_path("yolo26_bdd100k", "yolo26s.onnx")
     c2pnet_path = get_static_model_path("c2p", "c2pnet_outdoor_640x640.onnx")
+    lightweight_low_light_path = get_static_model_path("low_light", "lyt_net_lolv2_real_640x360.onnx")
     return [
         {
             "id": "low_light",
@@ -252,6 +299,14 @@ def get_model_status():
             "ready": os.path.exists(c2pnet_path),
             "loaded": _c2pnet_loaded,
             "model_path": c2pnet_path,
+            "providers": get_ort_execution_providers(),
+        },
+        {
+            "id": "lightweight_low_light",
+            "name": "Lightweight Low Light",
+            "ready": os.path.exists(lightweight_low_light_path),
+            "loaded": _lightweight_low_light_loaded,
+            "model_path": lightweight_low_light_path,
             "providers": get_ort_execution_providers(),
         },
     ]

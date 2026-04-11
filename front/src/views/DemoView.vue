@@ -104,7 +104,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ComparisonViewer from '../components/ComparisonViewer.vue'
-import { resolveAssetUrl, runDehazePipeline, runVisionPipeline } from '../services/api'
+import { resolveAssetUrl, runDehazePipeline, runLightweightPipeline, runVisionPipeline } from '../services/api'
 
 const pipelineOptions = [
   {
@@ -123,6 +123,23 @@ const pipelineOptions = [
     loadingImage: '图片增强与识别中，请稍候。',
     loadingVideo: '视频逐帧增强与识别中，请等待结果导出。',
     runner: runVisionPipeline,
+  },
+  {
+    value: 'lightweight-enhance',
+    label: '轻量增强识别',
+    status: 'Input → Lightweight Enhance → Detect',
+    middleLabel: '轻量增强结果',
+    compareOneImage: '原始图片 / 轻量增强结果',
+    compareOneVideo: '原始视频 / 轻量增强视频',
+    compareTwoImage: '轻量增强结果 / 检测结果',
+    compareTwoVideo: '轻量增强视频 / 检测视频',
+    emptyImage: '上传图片后显示轻量增强对比。',
+    emptyVideo: '上传视频后显示轻量增强对比。',
+    processingImage: '处理完成后显示检测对比。',
+    processingVideo: '视频处理完成后显示检测对比。',
+    loadingImage: '图片轻量增强与识别中，请稍候。',
+    loadingVideo: '视频逐帧轻量增强与识别中，请等待结果导出。',
+    runner: runLightweightPipeline,
   },
   {
     value: 'dehaze',
