@@ -22,7 +22,7 @@
             muted
             loop
             playsinline
-            preload="metadata"
+            preload="auto"
             @loadedmetadata="syncFromBefore"
             @play="syncFromBefore"
             @pause="syncFromBefore"
@@ -45,7 +45,7 @@
             muted
             loop
             playsinline
-            preload="metadata"
+            preload="auto"
             @loadedmetadata="syncFromBefore"
           />
           <div v-else class="comparison-empty">等待处理结果</div>

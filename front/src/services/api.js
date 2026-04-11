@@ -42,6 +42,61 @@ export async function runVisionPipeline({ file, confidence = 0.25, iou = 0.45 })
   })
 }
 
+export async function runDirectDetect({ file, confidence = 0.25, iou = 0.45 }) {
+  return runPipelineRequest({
+    endpoint: `${API_BASE}/yolo26_bdd100k_file/detect`,
+    file,
+    confidence,
+    iou,
+    fallbackMessage: '直接识别接口调用失败',
+    invalidMessage: '直接识别接口返回了无效数据',
+  })
+}
+
+export async function runLowLightEnhance({ file, confidence = 0.25, iou = 0.45 }) {
+  return runPipelineRequest({
+    endpoint: `${API_BASE}/low_light_file/enhance`,
+    file,
+    confidence,
+    iou,
+    fallbackMessage: '增强接口调用失败',
+    invalidMessage: '增强接口返回了无效数据',
+  })
+}
+
+export async function runLightweightLowLightEnhance({ file, confidence = 0.25, iou = 0.45 }) {
+  return runPipelineRequest({
+    endpoint: `${API_BASE}/lightweight_low_light_file/enhance`,
+    file,
+    confidence,
+    iou,
+    fallbackMessage: '轻量低光增强接口调用失败',
+    invalidMessage: '轻量低光增强接口返回了无效数据',
+  })
+}
+
+export async function runDerainOnly({ file, confidence = 0.25, iou = 0.45 }) {
+  return runPipelineRequest({
+    endpoint: `${API_BASE}/derain_file/derain`,
+    file,
+    confidence,
+    iou,
+    fallbackMessage: '去雨接口调用失败',
+    invalidMessage: '去雨接口返回了无效数据',
+  })
+}
+
+export async function runDehazeOnly({ file, confidence = 0.25, iou = 0.45 }) {
+  return runPipelineRequest({
+    endpoint: `${API_BASE}/c2pnet_file/dehaze`,
+    file,
+    confidence,
+    iou,
+    fallbackMessage: '去雾接口调用失败',
+    invalidMessage: '去雾接口返回了无效数据',
+  })
+}
+
 export async function runDehazePipeline({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
     endpoint: `${API_BASE}/dehaze_pipeline_file/process`,
@@ -92,6 +147,17 @@ async function runPipelineRequest({ endpoint, file, confidence, iou, fallbackMes
   }
 
   return unwrapResponse(payload, invalidMessage)
+}
+
+export async function fileFromAssetUrl(path, filename, fallbackType = 'image/jpeg') {
+  const response = await fetch(resolveAssetUrl(path))
+  if (!response.ok) {
+    throw new Error('中间结果读取失败，无法继续组合流程。')
+  }
+
+  const blob = await response.blob()
+  const type = blob.type || fallbackType
+  return new File([blob], filename, { type })
 }
 
 export { API_BASE, API_ORIGIN }

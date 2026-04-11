@@ -58,9 +58,9 @@ HOME_PAGE_MEDIA = [
 
 
 PIPELINE_VIDEO_DIRS = {
-    "raw": "images/pipeline/uploads",
-    "enhanced": "images/pipeline/enhanced",
-    "detected": "images/pipeline/results",
+    "raw": "images/lightweight_pipeline/uploads",
+    "enhanced": "images/lightweight_pipeline/enhanced",
+    "detected": "images/lightweight_pipeline/results",
 }
 VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v", ".avi"}
 

@@ -1,246 +1,489 @@
 <template>
-  <section class="demo-page">
-    <section class="pipeline-panel card-surface">
-      <div class="panel-header premium">
-        <div>
-          <p class="section-tag">Pipeline Overview</p>
+  <section class="demo-studio">
+    <header class="studio-header studio-header--compact">
+      <div class="studio-header__row">
+        <div class="studio-header__titles">
+          <p class="eyebrow">Pipeline Studio</p>
+          <h1>自定义流程编排</h1>
         </div>
-        <div class="pipeline-actions">
+        <p
+          class="lede lede-one-line"
+          title="在下方第一个画幅内上传图片或视频；于自定义编排中选择快捷模板，从功能区拖入或点击加入当前流程后运行。"
+        >
+          在下方第一个画幅内上传图片或视频；于自定义编排中选择快捷模板，从功能区拖入或点击加入当前流程后运行。
+        </p>
+      </div>
+    </header>
+
+    <div class="panel panel-orchestration">
+      <div class="panel-head">
+        <h2>自定义流程编排</h2>
+      </div>
+
+      <div class="preset-block">
+        <div class="preset-block-head">
+          <span class="preset-block-title">快捷模板</span>
+          <span class="panel-hint">一键填入当前流程</span>
+        </div>
+        <div class="preset-scroll">
           <button
-            v-for="option in pipelineOptions"
-            :key="option.value"
-            class="mode-button"
-            :class="{ 'is-active': pipelineMode === option.value }"
+            v-for="preset in presetFlows"
+            :key="preset.name"
             type="button"
-            @click="setPipelineMode(option.value)"
+            class="preset-pill"
+            @click="applyPreset(preset.steps)"
           >
-            {{ option.label }}
+            {{ preset.name }}
           </button>
-          <span class="status-pill">{{ activePipeline.status }}</span>
         </div>
       </div>
 
-      <div class="pipeline-track">
-        <article class="pipeline-card">
-          <div class="pipeline-step">Stage 01</div>
+      <div class="orchestration-split">
+        <div class="split-column split-zone">
+          <div class="split-column-head">
+            <h3>功能区</h3>
+            <span class="panel-hint">点击加入，或拖入右侧时间线</span>
+          </div>
+          <div class="palette">
+            <button
+              v-for="module in moduleCatalog"
+              :key="module.key"
+              type="button"
+              class="palette-card"
+              draggable="true"
+              @click="addModule(module.key)"
+              @dragstart="onCatalogDragStart(module.key)"
+            >
+              <span class="palette-code">{{ module.code }}</span>
+              <span class="palette-label">{{ module.label }}</span>
+              <span class="palette-short">{{ module.short }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="split-column split-flow">
+          <div class="timeline-head">
+            <h3>当前流程</h3>
+            <button type="button" class="btn-text" @click="clearFlow">清空流程</button>
+          </div>
+          <div class="timeline-scroll" @dragover.prevent @drop="onFlowDrop(flowModules.length)">
+            <div class="timeline-rail">
+              <div
+                v-for="(segment, index) in timelineSegments"
+                :key="`seg-${index}`"
+                class="timeline-segment"
+                :class="{ ghost: segment.ghost }"
+              >
+                <span
+                  v-if="index > 0"
+                  class="timeline-connector"
+                  :class="{ 'is-faint': segment.ghost }"
+                  aria-hidden="true"
+                />
+                <article
+                  class="timeline-node"
+                  :class="{
+                    'is-input': segment.kind === 'input',
+                    'is-module': segment.kind === 'module',
+                    'is-ghost': segment.ghost,
+                    'is-busy': loading && executingIndex === segment.flowIndex,
+                  }"
+                  :draggable="segment.kind === 'module'"
+                  @dragstart="segment.kind === 'module' ? onFlowDragStart(segment.flowIndex) : undefined"
+                  @dragover.prevent
+                  @drop.stop="segment.flowIndex != null ? onFlowDrop(segment.flowIndex) : undefined"
+                >
+                  <span class="node-index">{{ segment.displayIndex }}</span>
+                  <span class="node-title">{{ segment.title }}</span>
+                  <span class="node-sub">{{ segment.sub }}</span>
+                  <div v-if="segment.kind === 'module' && segment.flowIndex != null" class="node-ops">
+                    <button type="button" :disabled="segment.flowIndex === 0" @click="moveModule(segment.flowIndex, -1)">
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="segment.flowIndex === flowModules.length - 1"
+                      @click="moveModule(segment.flowIndex, 1)"
+                    >
+                      ↓
+                    </button>
+                    <button type="button" @click="removeModule(segment.flowIndex)">×</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="film-section">
+      <div class="film-head">
+        <div>
+          <p class="eyebrow">Step comparison</p>
+          <h2>步骤结果对比</h2>
+        </div>
+        <div v-if="summaryItems.length" class="film-stats">
+          <span v-for="item in summaryItems" :key="item.label">
+            <em>{{ item.value }}</em>
+            {{ item.label }}
+          </span>
+        </div>
+      </div>
+
+      <div class="film-strip">
+        <article
+          v-for="(step, index) in displaySteps"
+          :key="`${step.key}-film-${index}`"
+          class="film-card"
+          :class="{
+            'is-ready': Boolean(step.src),
+            'is-pending': loading && index === executingIndex,
+          }"
+        >
+          <div class="film-card-top">
+            <span class="film-idx">{{ String(index).padStart(2, '0') }}</span>
+            <div class="film-titles">
+              <strong>{{ step.label }}</strong>
+              <span>{{ step.description }}</span>
+            </div>
+          </div>
           <div
-            class="pipeline-media pipeline-media--upload"
-            :class="{ 'is-drag-over': dragOverUpload }"
+            v-if="index === 0"
+            class="film-viewport film-viewport-upload"
+            :class="{ 'is-drag-over': dragOverUpload, 'has-media': Boolean(step.src) }"
             @dragenter.prevent="dragOverUpload = true"
             @dragleave.prevent="onUploadDragLeave"
             @dragover.prevent="dragOverUpload = true"
             @drop.prevent="onUploadDrop"
           >
-            <label class="upload-stage">
-              <input type="file" accept="image/*,video/*" @change="handleFileChange" />
-
-              <div v-if="localPreviewUrl" class="upload-preview">
-                <video
-                  v-if="isPreviewVideo"
-                  :src="localPreviewUrl"
-                  class="pipeline-asset"
-                  controls
-                  muted
-                  playsinline
-                />
-                <img v-else :src="localPreviewUrl" alt="" class="pipeline-asset" />
-              </div>
-              <div v-else class="upload-empty">
-                <span class="upload-plus" aria-hidden="true">+</span>
-                <span class="upload-hint">点击或拖放上传</span>
-              </div>
+            <input
+              id="demo-film-upload-input"
+              class="film-file-input"
+              type="file"
+              accept="image/*,video/*"
+              @change="handleFileChange"
+            />
+            <div v-if="loading && index === executingIndex" class="film-shimmer" aria-hidden="true" />
+            <video
+              v-if="step.src && step.kind === 'video'"
+              :key="step.src"
+              :src="step.src"
+              autoplay
+              muted
+              loop
+              playsinline
+              controls
+              preload="auto"
+            />
+            <img v-else-if="step.src" :src="step.src" :alt="step.label" />
+            <label v-else class="film-upload-hit" for="demo-film-upload-input">
+              <span class="film-upload-title">点击或拖入文件</span>
+              <span class="film-upload-sub">{{ mediaLabel }} · 支持识别、去雾、去雨与低光链路</span>
             </label>
+            <label v-if="step.src" class="film-replace-btn" for="demo-film-upload-input">更换文件</label>
           </div>
-          <div class="pipeline-copy">
-            <h4>上传图片或视频资源</h4>
-          </div>
-        </article>
-
-        <article class="pipeline-card">
-          <div class="pipeline-step">Compare 01</div>
-          <div class="pipeline-media pipeline-media--compare">
-            <ComparisonViewer
-              :before-src="originalMediaUrl"
-              :after-src="enhancedMediaUrl"
-              :before-kind="originalMediaKind"
-              :after-kind="enhancedMediaKind"
-              before-label="原始输入"
-              :after-label="activePipeline.middleLabel"
-              :empty-text="emptyCompareText"
+          <div v-else class="film-viewport">
+            <div v-if="loading && index === executingIndex" class="film-shimmer" aria-hidden="true" />
+            <video
+              v-if="step.src && step.kind === 'video'"
+              :key="step.src"
+              :src="step.src"
+              autoplay
+              muted
+              loop
+              playsinline
+              controls
+              preload="auto"
             />
-          </div>
-          <div class="pipeline-copy">
-            <h4>{{ compareOneTitle }}</h4>
-          </div>
-        </article>
-
-        <article class="pipeline-card">
-          <div class="pipeline-step">Compare 02</div>
-          <div class="pipeline-media pipeline-media--compare">
-            <ComparisonViewer
-              :before-src="enhancedMediaUrl"
-              :after-src="detectedMediaUrl"
-              :before-kind="enhancedMediaKind"
-              :after-kind="detectedMediaKind"
-              :before-label="activePipeline.middleLabel"
-              after-label="检测结果"
-              :empty-text="processingCompareText"
-            />
-          </div>
-          <div class="pipeline-copy">
-            <h4>{{ compareTwoTitle }}</h4>
+            <img v-else-if="step.src" :src="step.src" :alt="step.label" />
+            <span v-else class="film-placeholder">{{ step.empty }}</span>
           </div>
         </article>
       </div>
 
-      <p v-if="loading" class="message-info">
-        {{ loadingMessage }}
-      </p>
-      <p v-if="errorMessage" class="message-error">{{ errorMessage }}</p>
+      <p v-if="errorMessage" class="film-error">{{ errorMessage }}</p>
+
+      <footer class="studio-bottom-bar">
+        <div class="bottom-bar-copy">
+          <div class="flow-chip" :title="flowStatus">{{ flowStatus }}</div>
+          <p class="status-line">{{ loading ? loadingMessage : '在首格完成上传并配置流程后，点击下方按钮运行。' }}</p>
+        </div>
+        <div class="bottom-bar-actions">
+          <button
+            type="button"
+            class="btn-secondary btn-primary-bottom"
+            :disabled="loading"
+            @click="clearForRetest"
+          >
+            清空 · 再次测试
+          </button>
+          <button
+            class="btn-primary btn-primary-bottom"
+            type="button"
+            :disabled="!selectedFile || !flowModules.length || loading"
+            @click="submitPipeline"
+          >
+            {{ loading ? '执行中…' : '运行流程' }}
+          </button>
+        </div>
+      </footer>
     </section>
   </section>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
-import ComparisonViewer from '../components/ComparisonViewer.vue'
 import {
+  fileFromAssetUrl,
   resolveAssetUrl,
-  runDehazePipeline,
-  runDerainPipeline,
-  runLightweightPipeline,
-  runVisionPipeline,
+  runDehazeOnly,
+  runDerainOnly,
+  runDirectDetect,
+  runLightweightLowLightEnhance,
+  runLowLightEnhance,
 } from '../services/api'
 
-const pipelineOptions = [
+const moduleCatalog = [
   {
-    value: 'enhance',
-    label: '增强识别',
-    status: 'Input → Enhance → Detect',
-    middleLabel: '增强结果',
-    compareOneImage: '原始图片 / 增强结果',
-    compareOneVideo: '原始视频 / 增强视频',
-    compareTwoImage: '增强结果 / 检测结果',
-    compareTwoVideo: '增强视频 / 检测视频',
-    emptyImage: '上传图片后显示增强对比。',
-    emptyVideo: '上传视频后显示增强对比。',
-    processingImage: '处理完成后显示检测对比。',
-    processingVideo: '视频处理完成后显示检测对比。',
-    loadingImage: '图片增强与识别中，请稍候。',
-    loadingVideo: '视频逐帧增强与识别中，请等待结果导出。',
-    runner: runVisionPipeline,
+    key: 'detect',
+    code: 'DET',
+    label: '识别',
+    short: '目标检测',
+    description: '输出目标框、类别与置信度。',
+    empty: '待识别',
+    runner: runDirectDetect,
+    outputLabel: '识别结果',
   },
   {
-    value: 'lightweight-enhance',
-    label: '轻量增强识别',
-    status: 'Input → Lightweight Enhance → Detect',
-    middleLabel: '轻量增强结果',
-    compareOneImage: '原始图片 / 轻量增强结果',
-    compareOneVideo: '原始视频 / 轻量增强视频',
-    compareTwoImage: '轻量增强结果 / 检测结果',
-    compareTwoVideo: '轻量增强视频 / 检测视频',
-    emptyImage: '上传图片后显示轻量增强对比。',
-    emptyVideo: '上传视频后显示轻量增强对比。',
-    processingImage: '处理完成后显示检测对比。',
-    processingVideo: '视频处理完成后显示检测对比。',
-    loadingImage: '图片轻量增强与识别中，请稍候。',
-    loadingVideo: '视频逐帧轻量增强与识别中，请等待结果导出。',
-    runner: runLightweightPipeline,
+    key: 'dehaze',
+    code: 'FOG',
+    label: '图像去雾',
+    short: 'C2PNet',
+    description: '恢复雾天道路可见度。',
+    empty: '待去雾',
+    runner: runDehazeOnly,
+    outputLabel: '去雾结果',
   },
   {
-    value: 'dehaze',
-    label: '去雾识别',
-    status: 'Input → Dehaze → Detect',
-    middleLabel: '去雾结果',
-    compareOneImage: '原始图片 / 去雾结果',
-    compareOneVideo: '原始视频 / 去雾视频',
-    compareTwoImage: '去雾结果 / 检测结果',
-    compareTwoVideo: '去雾视频 / 检测视频',
-    emptyImage: '上传图片后显示去雾对比。',
-    emptyVideo: '上传视频后显示去雾对比。',
-    processingImage: '处理完成后显示检测对比。',
-    processingVideo: '视频处理完成后显示检测对比。',
-    loadingImage: '图片去雾与识别中，请稍候。',
-    loadingVideo: '视频逐帧去雾与识别中，请等待结果导出。',
-    runner: runDehazePipeline,
+    key: 'derain',
+    code: 'RAIN',
+    label: '图像去雨',
+    short: 'Attentive GAN',
+    description: '削弱雨线与雨天干扰。',
+    empty: '待去雨',
+    runner: runDerainOnly,
+    outputLabel: '去雨结果',
   },
   {
-    value: 'derain',
-    label: '去雨识别',
-    status: 'Input → Derain → Detect',
-    middleLabel: '去雨结果',
-    compareOneImage: '原始图片 / 去雨结果',
-    compareOneVideo: '原始视频 / 去雨视频',
-    compareTwoImage: '去雨结果 / 检测结果',
-    compareTwoVideo: '去雨视频 / 检测视频',
-    emptyImage: '上传图片后显示去雨对比。',
-    emptyVideo: '上传视频后显示去雨对比。',
-    processingImage: '处理完成后显示检测对比。',
-    processingVideo: '视频处理完成后显示检测对比。',
-    loadingImage: '图片去雨与识别中，请稍候。',
-    loadingVideo: '视频逐帧去雨与识别中，请等待结果导出。',
-    runner: runDerainPipeline,
+    key: 'low-light',
+    code: 'LUX',
+    label: '低光增强',
+    short: '高质量增强',
+    description: '提升暗光细节与亮度。',
+    empty: '待增强',
+    runner: runLowLightEnhance,
+    outputLabel: '低光增强结果',
+  },
+  {
+    key: 'lightweight-low-light',
+    code: 'FAST',
+    label: '轻量低光增强',
+    short: '轻量化',
+    description: '更轻量的低光增强。',
+    empty: '待轻量增强',
+    runner: runLightweightLowLightEnhance,
+    outputLabel: '轻量增强结果',
   },
 ]
 
+const presetFlows = [
+  { name: '直接识别', steps: ['detect'] },
+  { name: '低光 → 识别', steps: ['low-light', 'detect'] },
+  { name: '去雨 → 识别', steps: ['derain', 'detect'] },
+  { name: '去雾 → 识别', steps: ['dehaze', 'detect'] },
+  { name: '低光 → 去雨 → 识别', steps: ['low-light', 'derain', 'detect'] },
+  { name: '轻量增强 → 识别', steps: ['lightweight-low-light', 'detect'] },
+]
+
+const moduleMap = Object.fromEntries(moduleCatalog.map((module) => [module.key, module]))
+
 const loading = ref(false)
+const executingIndex = ref(-1)
 const selectedFile = ref(null)
 const result = ref(null)
 const errorMessage = ref('')
 const localPreviewUrl = ref('')
 const dragOverUpload = ref(false)
-const pipelineMode = ref('enhance')
+const flowModules = ref(['low-light', 'derain', 'detect'])
+const dragPayload = ref(null)
+const liveSteps = ref(null)
 
-const activePipeline = computed(() => pipelineOptions.find((option) => option.value === pipelineMode.value) || pipelineOptions[0])
+const isPreviewVideo = computed(() => (selectedFile.value?.type || '').startsWith('video/'))
+const mediaKind = computed(() => (isPreviewVideo.value ? 'video' : 'image'))
+const mediaLabel = computed(() => (isPreviewVideo.value ? '视频' : '图片'))
+const flowStatus = computed(() => ['上传', ...flowModules.value.map((key) => moduleMap[key].label)].join(' → '))
+const loadingMessage = computed(() => (isPreviewVideo.value ? '视频链路处理中，导出可能需要稍候。' : '正在按步骤处理…'))
 
-const isPreviewVideo = computed(() => {
-  const t = selectedFile.value?.type || ''
-  return t.startsWith('video/')
+const timelineSegments = computed(() => {
+  const segments = [
+    {
+      kind: 'input',
+      displayIndex: '00',
+      title: '上传',
+      sub: '原始输入',
+      ghost: false,
+      flowIndex: null,
+    },
+  ]
+
+  flowModules.value.forEach((key, index) => {
+    const mod = moduleMap[key]
+    segments.push({
+      kind: 'module',
+      displayIndex: String(index + 1).padStart(2, '0'),
+      title: mod.label,
+      sub: mod.short,
+      ghost: false,
+      flowIndex: index,
+    })
+  })
+
+  if (!flowModules.value.length) {
+    segments.push({
+      kind: 'placeholder',
+      displayIndex: '—',
+      title: '添加模块',
+      sub: '从上方库拖入或点击',
+      ghost: true,
+      flowIndex: null,
+    })
+  }
+
+  return segments
 })
 
-const mediaType = computed(() => result.value?.media_type || (isPreviewVideo.value ? 'video' : 'image'))
-
-const originalMediaKind = computed(() => (isPreviewVideo.value ? 'video' : 'image'))
-const enhancedMediaKind = computed(() => mediaType.value)
-const detectedMediaKind = computed(() => mediaType.value)
-
-const compareOneTitle = computed(() =>
-  mediaType.value === 'video' ? activePipeline.value.compareOneVideo : activePipeline.value.compareOneImage,
-)
-
-const compareTwoTitle = computed(() =>
-  mediaType.value === 'video' ? activePipeline.value.compareTwoVideo : activePipeline.value.compareTwoImage,
-)
-
-const emptyCompareText = computed(() =>
-  isPreviewVideo.value ? activePipeline.value.emptyVideo : activePipeline.value.emptyImage,
-)
-
-const processingCompareText = computed(() =>
-  isPreviewVideo.value ? activePipeline.value.processingVideo : activePipeline.value.processingImage,
-)
-
-const loadingMessage = computed(() =>
-  isPreviewVideo.value ? activePipeline.value.loadingVideo : activePipeline.value.loadingImage,
-)
-
-const originalMediaUrl = computed(() => {
-  if (result.value?.upload_media) return resolveAssetUrl(result.value.upload_media)
-  if (result.value?.upload_image) return resolveAssetUrl(result.value.upload_image)
-  return localPreviewUrl.value
+const displaySteps = computed(() => {
+  if (liveSteps.value?.length) return liveSteps.value
+  if (result.value?.steps?.length) return result.value.steps
+  return buildEmptySteps()
 })
 
-const enhancedMediaUrl = computed(() => {
-  if (result.value?.enhanced_media) return resolveAssetUrl(result.value.enhanced_media)
-  if (!result.value?.enhanced_image) return ''
-  return resolveAssetUrl(result.value.enhanced_image)
+const summaryItems = computed(() => {
+  const data = result.value?.raw || {}
+  const timing = result.value?.totalMs
+  const items = []
+
+  if (Number.isFinite(Number(data.count))) items.push({ label: '目标数', value: data.count })
+  if (Number.isFinite(Number(data.summary?.avg_confidence))) {
+    items.push({ label: '平均置信度', value: data.summary.avg_confidence })
+  }
+  if (Number.isFinite(Number(timing))) items.push({ label: '总耗时 ms', value: Math.round(Number(timing)) })
+  return items
 })
 
-const detectedMediaUrl = computed(() => {
-  if (result.value?.result_media) return resolveAssetUrl(result.value.result_media)
-  if (!result.value?.result_image) return ''
-  return resolveAssetUrl(result.value.result_image)
-})
+function buildEmptySteps() {
+  return [makeInputStep(localPreviewUrl.value), ...flowModules.value.map((key) => makeModuleStep(key, '', mediaKind.value))]
+}
+
+function makeInputStep(src) {
+  return {
+    key: 'input',
+    label: '上传',
+    description: '原始输入。',
+    empty: '等待上传',
+    src,
+    kind: mediaKind.value,
+  }
+}
+
+function makeModuleStep(moduleKey, src, kind = mediaKind.value) {
+  const module = moduleMap[moduleKey]
+  return {
+    key: moduleKey,
+    label: module.label,
+    description: module.description,
+    empty: module.empty,
+    src,
+    kind,
+  }
+}
+
+function asset(path) {
+  return path ? resolveAssetUrl(path) : ''
+}
+
+function resultPath(data) {
+  return data.result_media || data.result_image || data.enhanced_media || data.enhanced_image || ''
+}
+
+function extensionFor(kind) {
+  return kind === 'video' ? 'mp4' : 'jpg'
+}
+
+function addModule(moduleKey) {
+  flowModules.value = [...flowModules.value, moduleKey]
+  resetResult()
+}
+
+function removeModule(index) {
+  flowModules.value = flowModules.value.filter((_, itemIndex) => itemIndex !== index)
+  resetResult()
+}
+
+function moveModule(index, direction) {
+  const nextIndex = index + direction
+  if (nextIndex < 0 || nextIndex >= flowModules.value.length) return
+
+  const next = [...flowModules.value]
+  const [item] = next.splice(index, 1)
+  next.splice(nextIndex, 0, item)
+  flowModules.value = next
+  resetResult()
+}
+
+function clearFlow() {
+  flowModules.value = []
+  resetResult()
+}
+
+function applyPreset(steps) {
+  flowModules.value = [...steps]
+  resetResult()
+}
+
+function onCatalogDragStart(moduleKey) {
+  dragPayload.value = { source: 'catalog', moduleKey }
+}
+
+function onFlowDragStart(index) {
+  dragPayload.value = { source: 'flow', index }
+}
+
+function onFlowDrop(index) {
+  const payload = dragPayload.value
+  if (!payload) return
+
+  const next = [...flowModules.value]
+  if (payload.source === 'catalog') {
+    next.splice(index, 0, payload.moduleKey)
+  } else if (payload.source === 'flow') {
+    const [item] = next.splice(payload.index, 1)
+    const targetIndex = payload.index < index ? index - 1 : index
+    next.splice(targetIndex, 0, item)
+  }
+
+  flowModules.value = next
+  dragPayload.value = null
+  resetResult()
+}
+
+function resetResult() {
+  result.value = null
+  liveSteps.value = null
+  errorMessage.value = ''
+  executingIndex.value = -1
+}
 
 function revokePreview() {
   if (localPreviewUrl.value) {
@@ -253,7 +496,7 @@ function pickUploadFile(file) {
   if (!file) return
   const ok = file.type.startsWith('image/') || file.type.startsWith('video/')
   if (!ok) {
-    errorMessage.value = '请上传图片或视频文件。'
+    errorMessage.value = '请上传图片或视频。'
     return
   }
 
@@ -261,24 +504,27 @@ function pickUploadFile(file) {
   selectedFile.value = file
   errorMessage.value = ''
   result.value = null
+  liveSteps.value = null
   localPreviewUrl.value = URL.createObjectURL(file)
-  submitPipeline()
-}
-
-function setPipelineMode(mode) {
-  if (pipelineMode.value === mode) return
-  pipelineMode.value = mode
-  result.value = null
-  errorMessage.value = ''
-  if (selectedFile.value) {
-    submitPipeline()
-  }
 }
 
 function handleFileChange(event) {
   const [file] = event.target.files || []
   pickUploadFile(file)
   if (event.target) event.target.value = ''
+}
+
+function clearForRetest() {
+  if (loading.value) return
+  revokePreview()
+  selectedFile.value = null
+  result.value = null
+  liveSteps.value = null
+  errorMessage.value = ''
+  executingIndex.value = -1
+  dragOverUpload.value = false
+  const input = document.getElementById('demo-film-upload-input')
+  if (input) input.value = ''
 }
 
 function onUploadDragLeave(event) {
@@ -294,19 +540,53 @@ function onUploadDrop(event) {
 }
 
 async function submitPipeline() {
-  if (!selectedFile.value) return
+  if (!selectedFile.value || !flowModules.value.length || loading.value) return
 
   loading.value = true
   errorMessage.value = ''
+  liveSteps.value = buildEmptySteps()
+  executingIndex.value = -1
+
+  const startedAt = performance.now()
+  const steps = [makeInputStep(localPreviewUrl.value)]
+  let currentFile = selectedFile.value
+  let lastData = null
 
   try {
-    result.value = await activePipeline.value.runner({
-      file: selectedFile.value,
-    })
+    for (const [index, moduleKey] of flowModules.value.entries()) {
+      executingIndex.value = index + 1
+      const module = moduleMap[moduleKey]
+      const data = await module.runner({ file: currentFile })
+      const outputPath = resultPath(data)
+      const outputKind = data.media_type || mediaKind.value
+
+      steps.push(makeModuleStep(moduleKey, asset(outputPath), outputKind))
+      lastData = data
+
+      const merged = buildEmptySteps().map((placeholder, stepIndex) => steps[stepIndex] || placeholder)
+      liveSteps.value = merged
+
+      if (index < flowModules.value.length - 1) {
+        currentFile = await fileFromAssetUrl(
+          outputPath,
+          `${moduleKey}-${index + 1}.${extensionFor(outputKind)}`,
+          currentFile.type,
+        )
+      }
+    }
+
+    result.value = {
+      raw: lastData || {},
+      steps,
+      totalMs: performance.now() - startedAt,
+    }
+    liveSteps.value = null
   } catch (error) {
-    errorMessage.value = error.message || '处理失败，请稍后重试。'
+    errorMessage.value = error.message || '流程失败，请检查顺序或稍后重试。'
+    liveSteps.value = null
   } finally {
     loading.value = false
+    executingIndex.value = -1
   }
 }
 
@@ -316,357 +596,836 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.demo-page {
-  display: grid;
-}
-
-.card-surface {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 28px;
-  background: linear-gradient(165deg, rgba(18, 26, 42, 0.72) 0%, rgba(8, 12, 24, 0.88) 100%);
-  box-shadow:
-    0 0 0 0.5px rgba(255, 255, 255, 0.06) inset,
-    0 24px 80px rgba(0, 0, 0, 0.35),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset;
-  backdrop-filter: blur(48px) saturate(150%);
-  -webkit-backdrop-filter: blur(48px) saturate(150%);
-  transition:
-    box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.5s ease;
-}
-
-.pipeline-panel {
-  padding: 30px;
-}
-
-.pipeline-panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(125, 211, 252, 0.07), transparent 55%),
-    linear-gradient(145deg, rgba(148, 163, 184, 0.06), transparent 42%);
-  pointer-events: none;
-}
-
-.panel-header.premium {
-  position: relative;
-  z-index: 1;
-  margin-bottom: 24px;
-  animation: panel-header-in 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.pipeline-actions {
+.demo-studio {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: clamp(16px, 2.5vw, 22px);
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 4px 48px;
 }
 
-.mode-button {
-  min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(226, 232, 240, 0.78);
-  font: inherit;
-  font-size: 0.86rem;
+.studio-header {
+  padding: clamp(20px, 3vw, 28px) clamp(22px, 3vw, 32px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(145deg, rgba(20, 184, 166, 0.12), transparent 55%),
+    linear-gradient(320deg, rgba(56, 189, 248, 0.08), transparent 50%),
+    rgba(8, 12, 22, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
+}
+
+.studio-header--compact {
+  padding: 10px 16px 12px;
+  border-radius: 14px;
+}
+
+.studio-header__row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px 20px;
+  min-width: 0;
+}
+
+.studio-header__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.studio-header__titles .eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+}
+
+.studio-header__titles h1 {
+  margin: 0;
+  font-size: clamp(1.05rem, 2.2vw, 1.35rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: #f8fafc;
+  white-space: nowrap;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(94, 234, 212, 0.85);
+}
+
+.lede-one-line {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: rgba(203, 213, 225, 0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lede {
+  margin: 12px 0 0;
+  max-width: 50rem;
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.flow-chip {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.88);
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  max-height: 4.5em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.btn-primary {
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 14px;
+  font-weight: 700;
+  color: #041016;
+  background: linear-gradient(180deg, #ecfeff 0%, #5eead4 100%);
   cursor: pointer;
+  transition: transform 0.35s var(--ease-apple), opacity 0.25s ease;
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary:not(:disabled):hover {
+  transform: translateY(-2px);
+}
+
+.btn-primary-bottom {
+  min-width: min(100%, 200px);
+  flex-shrink: 0;
+}
+
+.btn-secondary {
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 14px;
+  font-weight: 650;
+  color: rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition:
+    transform 0.35s var(--ease-apple),
+    border-color 0.25s ease,
+    background 0.25s ease;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-secondary:not(:disabled):hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.bottom-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.status-line {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.5;
+}
+
+.studio-bottom-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bottom-bar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(100%, 520px);
+  flex: 1;
+}
+
+.panel-orchestration {
+  margin-bottom: 0;
+}
+
+.preset-block {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.preset-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.preset-block-title {
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: #f1f5f9;
+}
+
+.orchestration-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.15fr);
+  gap: 0 20px;
+  align-items: start;
+}
+
+.split-column {
+  min-width: 0;
+}
+
+.split-flow {
+  padding-left: 20px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.split-column-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.split-column-head h3,
+.timeline-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: #f1f5f9;
+}
+
+.panel {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(6, 10, 20, 0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: clamp(18px, 2.2vw, 22px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.panel-head.tight {
+  margin-bottom: 10px;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  color: #f1f5f9;
+}
+
+.panel-hint {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.preset-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-pill {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+.preset-pill:hover {
+  border-color: rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.palette-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 12px 14px;
+  border-radius: 14px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+  cursor: grab;
+  transition:
+    transform 0.35s var(--ease-apple),
+    border-color 0.25s ease,
+    background 0.25s ease;
+}
+
+.palette-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(125, 211, 252, 0.28);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.palette-code {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(250, 204, 21, 0.95);
+}
+
+.palette-label {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.palette-short {
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.95);
+  line-height: 1.4;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.btn-text {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  color: rgba(203, 213, 225, 0.85);
+  background: transparent;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.btn-text:hover {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
+.timeline-scroll {
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+}
+
+.timeline-rail {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: 120px;
+}
+
+.timeline-segment {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.timeline-segment .timeline-node {
+  flex-shrink: 0;
+}
+
+.timeline-connector {
+  width: 28px;
+  height: 2px;
+  margin: 0 2px;
+  background: linear-gradient(90deg, rgba(94, 234, 212, 0.15), rgba(94, 234, 212, 0.65));
+  border-radius: 999px;
+}
+
+.timeline-connector.is-faint {
+  opacity: 0.35;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.2), rgba(148, 163, 184, 0.45));
+}
+
+.timeline-node {
+  position: relative;
+  width: 148px;
+  min-height: 112px;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   transition:
     border-color 0.3s ease,
-    background 0.3s ease,
-    color 0.3s ease;
+    box-shadow 0.35s ease;
 }
 
-.mode-button:hover,
-.mode-button.is-active {
-  border-color: rgba(125, 211, 252, 0.55);
-  background: rgba(14, 116, 144, 0.24);
-  color: rgba(248, 250, 252, 0.94);
+.timeline-node.is-input {
+  border-color: rgba(45, 212, 191, 0.35);
+  background: linear-gradient(165deg, rgba(20, 184, 166, 0.14), rgba(255, 255, 255, 0.02));
 }
 
-.pipeline-track {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  align-items: stretch;
+.timeline-node.is-module {
+  cursor: grab;
 }
 
-.pipeline-card {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  align-content: start;
-  gap: 16px;
-  padding: 18px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-  animation: card-rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
-  transition:
-    transform 0.55s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.55s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.4s ease,
-    background 0.45s ease;
+.timeline-node.is-ghost {
+  border-style: dashed;
+  opacity: 0.75;
 }
 
-.pipeline-card:nth-child(1) {
-  animation-delay: 0.06s;
+.timeline-node.is-busy {
+  border-color: rgba(125, 211, 252, 0.45);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.2);
+  animation: node-pulse 1.2s ease-in-out infinite;
 }
 
-.pipeline-card:nth-child(2) {
-  animation-delay: 0.14s;
+@keyframes node-pulse {
+  50% {
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.18);
+  }
 }
 
-.pipeline-card:nth-child(3) {
-  animation-delay: 0.22s;
+.node-index {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(250, 204, 21, 0.9);
 }
 
-.pipeline-card:hover {
-  transform: translateY(-6px);
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.055);
-  box-shadow:
-    0 20px 56px rgba(0, 0, 0, 0.28),
-    0 0 0 1px rgba(125, 211, 252, 0.06);
+.node-title {
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: #f8fafc;
 }
 
-.pipeline-step {
+.node-sub {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.node-ops {
+  display: flex;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.node-ops button {
+  flex: 1;
+  min-height: 28px;
+  border-radius: 8px;
   font-size: 0.78rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.8);
-  text-align: center;
-}
-
-.pipeline-media {
-  overflow: hidden;
-  width: 100%;
-  max-height: 100%;
-  min-height: 0;
-  aspect-ratio: 4 / 3;
-  border-radius: 18px;
-  background: rgba(2, 6, 23, 0.65);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset;
-  transition: box-shadow 0.45s ease;
-  place-self: center;
-}
-
-.pipeline-card:hover .pipeline-media {
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 40px rgba(56, 189, 248, 0.06);
-}
-
-.pipeline-media--compare,
-.pipeline-media--upload {
-  position: relative;
-}
-
-.pipeline-media--upload .upload-stage {
-  position: absolute;
-  inset: 0;
-  display: block;
-  margin: 0;
-}
-
-.pipeline-media--compare :deep(.comparison-viewer) {
-  position: absolute;
-  inset: 0;
-  height: 100%;
-}
-
-.pipeline-media--compare :deep(.comparison-stage) {
-  min-height: 0;
-  height: 100%;
-  border-radius: 18px;
-}
-
-.pipeline-copy h4 {
-  margin: 0;
-  color: rgba(248, 250, 252, 0.92);
-  font-size: 0.98rem;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  text-align: center;
-}
-
-.upload-stage {
+  color: rgba(226, 232, 240, 0.85);
+  background: rgba(2, 6, 23, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   cursor: pointer;
 }
 
-.upload-stage input {
-  display: none;
+.node-ops button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
-.upload-preview,
-.upload-empty {
-  overflow: hidden;
-  height: 100%;
-  min-height: 100%;
+.film-section {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(5, 9, 18, 0.82);
+  padding: clamp(20px, 2.5vw, 26px);
+  box-shadow: var(--shadow);
+}
+
+.film-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.film-head h2 {
+  margin: 6px 0 0;
+  font-size: clamp(1.15rem, 2.4vw, 1.45rem);
+  font-weight: 650;
+  color: #f8fafc;
+}
+
+.film-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.film-stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: rgba(203, 213, 225, 0.88);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.film-stats em {
+  font-style: normal;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.film-strip {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+}
+
+.film-card {
+  flex: 0 0 min(440px, 90vw);
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
   border-radius: 18px;
-  border: 1px dashed rgba(125, 211, 252, 0.2);
-  background:
-    radial-gradient(circle at 50% 30%, rgba(125, 211, 252, 0.08), transparent 45%),
-    linear-gradient(180deg, rgba(9, 16, 28, 0.94), rgba(15, 23, 42, 0.82));
-  transition:
-    border-color 0.45s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.3s ease, transform 0.35s var(--ease-apple);
 }
 
-.pipeline-media--upload.is-drag-over .upload-preview,
-.pipeline-media--upload.is-drag-over .upload-empty {
-  border-color: rgba(125, 211, 252, 0.55);
+.film-card.is-ready {
+  border-color: rgba(94, 234, 212, 0.22);
+}
+
+.film-card:hover {
+  transform: translateY(-3px);
+}
+
+.film-card-top {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.film-idx {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(15, 23, 42, 0.95);
+  background: linear-gradient(145deg, #fef9c3, #fbbf24);
+}
+
+.film-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.film-titles strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: #f8fafc;
+}
+
+.film-titles span {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: rgba(148, 163, 184, 0.95);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.film-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  aspect-ratio: 16 / 10;
+  min-height: clamp(240px, 36vw, 420px);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(148, 163, 184, 0.12), transparent 55%),
+    #020617;
+}
+
+.film-viewport-upload {
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.film-viewport-upload.is-drag-over {
+  border-color: rgba(94, 234, 212, 0.55);
   box-shadow: inset 0 0 0 1px rgba(94, 234, 212, 0.2);
 }
 
-.upload-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  pointer-events: none;
-}
-
-.upload-plus {
-  font-size: clamp(3.25rem, 11vw, 5.25rem);
-  font-weight: 200;
-  line-height: 1;
-  color: rgba(125, 211, 252, 0.88);
-  text-shadow: 0 0 48px rgba(94, 234, 212, 0.35);
-  user-select: none;
-  animation: upload-plus-breathe 5s ease-in-out infinite;
-}
-
-@keyframes upload-plus-breathe {
-  0%,
-  100% {
-    opacity: 0.82;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.04);
-  }
-}
-
-.upload-hint {
-  font-size: 0.86rem;
-  letter-spacing: 0.04em;
-  color: rgba(203, 213, 225, 0.58);
-  user-select: none;
-}
-
-.upload-preview {
+.film-viewport-upload.has-media {
   border-style: solid;
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-.pipeline-asset {
+.film-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.film-upload-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.film-upload-title {
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: #e2e8f0;
+}
+
+.film-upload-sub {
+  max-width: 16rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(148, 163, 184, 0.92);
+}
+
+.film-replace-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  user-select: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease;
+}
+
+.film-replace-btn:hover {
+  border-color: rgba(94, 234, 212, 0.35);
+  background: rgba(15, 23, 42, 0.88);
+}
+
+.film-viewport img,
+.film-viewport video {
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   background: #020617;
-  transform: scale(1.001);
-  transition: transform 0.85s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.pipeline-card:hover .upload-preview .pipeline-asset {
-  transform: scale(1.03);
+.film-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: rgba(148, 163, 184, 0.75);
 }
 
-.message-error {
-  position: relative;
-  z-index: 1;
-  margin: 18px 0 0;
-  padding: 12px 16px;
-  border-radius: 14px;
+.film-shimmer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(
+    110deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.06) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.1s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.film-error {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 0.88rem;
   color: #fecaca;
-  background: rgba(127, 29, 29, 0.45);
+  background: rgba(127, 29, 29, 0.4);
   border: 1px solid rgba(248, 113, 113, 0.2);
-  animation: message-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.message-info {
-  position: relative;
-  z-index: 1;
-  margin: 18px 0 0;
-  padding: 12px 16px;
-  border-radius: 14px;
-  color: rgba(226, 232, 240, 0.92);
-  background: rgba(14, 116, 144, 0.22);
-  border: 1px solid rgba(103, 232, 249, 0.2);
-  animation: message-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes message-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+@media (max-width: 900px) {
+  .studio-header__row {
+    flex-wrap: wrap;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .studio-header__titles h1 {
+    white-space: normal;
+  }
+
+  .lede-one-line {
+    flex-basis: 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: unset;
   }
 }
 
-@media (max-width: 1180px) {
-  .pipeline-track {
+@media (max-width: 960px) {
+  .orchestration-split {
     grid-template-columns: 1fr;
   }
+
+  .split-flow {
+    padding-left: 0;
+    padding-top: 20px;
+    margin-top: 4px;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .studio-bottom-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bottom-bar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-primary-bottom {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
-@media (max-width: 760px) {
-  .pipeline-panel {
-    padding: 22px;
+@media (max-width: 560px) {
+  .timeline-connector {
+    width: 16px;
   }
 
-  .pipeline-actions {
-    align-items: flex-start;
-  }
-
-  .panel-header {
-    align-items: flex-start;
-    flex-direction: column;
+  .timeline-node {
+    width: 132px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel-header.premium,
-  .pipeline-card {
-    animation: none;
-  }
-
-  .upload-plus {
-    animation: none;
-  }
-
-  .message-error,
-  .message-info {
-    animation: none;
-  }
-
-  .pipeline-card,
-  .pipeline-media,
-  .pipeline-asset,
-  .upload-preview,
-  .upload-empty {
-    transition: none;
-  }
-
-  .pipeline-card:hover {
+  .btn-primary:not(:disabled):hover,
+  .btn-secondary:not(:disabled):hover,
+  .palette-card:hover,
+  .film-card:hover {
     transform: none;
   }
 
-  .pipeline-card:hover .upload-preview .pipeline-asset {
-    transform: none;
+  .timeline-node.is-busy,
+  .film-shimmer {
+    animation: none;
   }
 }
 </style>

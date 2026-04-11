@@ -17,7 +17,7 @@
 
       <nav class="topbar-nav">
         <RouterLink to="/">首页</RouterLink>
-        <RouterLink to="/demo">展示页面</RouterLink>
+        <RouterLink to="/demo">功能展示</RouterLink>
       </nav>
     </header>
 
