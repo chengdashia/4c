@@ -1,296 +1,325 @@
-# Showcase System
+# Showcase Vision System
 
 ## 项目简介
 
-这是一个面向低照度交通场景展示的视觉处理系统，核心目标是把一张夜间或弱光图片，依次经过：
+这是一个面向复杂道路天气场景的视觉处理展示系统。项目把图像/视频复原、低照度增强和目标检测封装成可组合的前后端 Demo，适合展示“输入媒体 -> 视觉增强/复原 -> YOLO26 识别 -> 结果对比”的完整流程。
 
-1. 低照度增强
-2. 目标检测
-3. 前端可视化展示
+当前代码已经覆盖以下能力：
 
-最终输出一套可以直接演示的结果，包括原图、增强图、检测图、检测框信息、耗时统计和简单场景分析。
+- 直接目标检测：YOLO26 BDD100K
+- 低照度增强：Diffusion Low Light
+- 轻量低照度增强：LYT-Net ONNX
+- 图像/视频去雨：Attentive GAN Derain
+- 图像/视频去雾：C2PNet
+- 组合流程：低光增强后检测、轻量增强后检测、去雨后检测、去雾后检测
+- 前端自定义编排：可按模块自由组合“识别、去雾、去雨、低光增强、轻量低光增强”
 
-整个仓库不是单一前端或单一后端，而是一个完整的 Demo 系统，包含：
-
-- `front`：Vue 3 + Vite 前端展示与交互
-- `back`：Flask 后端接口层与模型调度层
-- `Diffusion-Low-Light`：低照度增强相关模型与代码资源
-- `yolo26`：YOLO26 检测模型代码与训练/推理资源
-
-## 适用场景
-
-本项目适合用于以下几类工作：
-
-- 展示“低照度增强 + 目标检测”串联流程
-- 作为课程作业、毕业设计或项目答辩的可运行 Demo
-- 快速验证弱光图像增强对检测结果的帮助
-- 为后续继续接入视频流、更多模型或业务逻辑提供基础框架
-
-## 项目整体流程
-
-系统的主流程如下：
+## 仓库结构
 
 ```text
-用户上传图片
-  -> Flask 接收文件并校验格式
-  -> 调用低照度增强 ONNX 模型
-  -> 保存增强结果
-  -> 调用 YOLO26 BDD100K 检测模型
-  -> 保存检测结果
-  -> 返回图片地址、检测结果、耗时和摘要信息
-  -> Vue 前端展示处理结果和对比效果
+.
+├── README.md
+├── back/                         # Flask 后端服务、接口、模型封装和静态资源
+│   ├── app/
+│   │   ├── __init__.py            # Flask 应用工厂、Swagger、CORS、路由注册、错误处理
+│   │   ├── models/                # ONNX 模型推理封装
+│   │   ├── routes/                # REST API 路由
+│   │   └── utils/                 # 图片/视频处理、模型加载、路径转换等工具
+│   ├── static/                    # 模型文件、上传文件、处理结果文件
+│   ├── config.py                  # Flask 配置
+│   ├── homepage_media.py          # 首页展示媒体解析
+│   ├── requirements.txt
+│   └── run.py                     # 后端启动入口
+├── front/                         # Vue 3 + Vite 前端
+│   ├── public/posters/            # 首页默认海报
+│   ├── src/
+│   │   ├── components/            # 对比查看组件
+│   │   ├── services/api.js        # 后端接口封装
+│   │   ├── views/HomeView.vue     # 首页展示
+│   │   └── views/DemoView.vue     # 自定义流程编排与演示页
+│   ├── package.json
+│   └── vite.config.js
+├── Diffusion-Low-Light/           # 低照度增强模型源码与训练/评估资源
+├── yolo26/                        # YOLO26 相关源码、配置和训练资源
+└── test/                          # 单模型测试脚本与 ONNX 样例资源
 ```
 
-其中，后端提供了单模型接口，也提供了完整串联接口，前端当前主要围绕串联流程进行演示。
+## 系统流程
 
-## 仓库结构说明
+后端提供单模型接口和组合流程接口。前端的 `/demo` 页面采用更灵活的逐步编排方式：每执行一个模块，就把上一步输出转换成下一步输入。
 
-### 根目录
-
-- `README.md`：项目总说明
-- `Diffusion-Low-Light/`：低照度增强模型与相关实现代码
-- `yolo26/`：YOLO26 目标检测代码、配置、测试与训练资源
-- `back/`：后端服务
-- `front/`：前端页面
-
-### `back` 后端目录
-
-`back` 是整个系统的接口层和编排层，负责接收上传文件、调用模型、组织返回结果。
-
-关键内容如下：
-
-- `back/run.py`：后端启动入口，默认监听 `5001` 端口
-- `back/config.py`：Flask 基础配置，例如上传大小限制、Swagger 行为、调试模式
-- `back/homepage_media.py`：首页展示媒体配置，支持优先读取本地静态资源，缺失时回退到默认海报
-- `back/requirements.txt`：后端依赖
-
-#### `back/app`
-
-- `back/app/__init__.py`
-  负责创建 Flask 应用、初始化 CORS、Swagger 文档、日志系统、注册接口命名空间，以及统一错误处理。
-
-- `back/app/routes/`
-  定义具体接口：
-  - `low_light.py`：低照度增强接口
-  - `yolo26_bdd100k.py`：YOLO26 目标检测接口
-  - `pipeline.py`：增强后再检测的串联接口
-
-- `back/app/models/`
-  对底层模型做了一层项目内封装：
-  - `low_light/diffusion_low_light.py`：低照度增强模型封装
-  - `yolo26_bdd100k/yolo26_onnx.py`：YOLO26 ONNX 推理封装
-
-- `back/app/utils/`
-  放置辅助工具：
-  - `model_loader.py`：模型懒加载、模型状态检查、统一推理入口
-  - `image_processing.py`：图片读写、格式校验、检测结果转换等
-  - `image_codec.py`：Base64 与图像之间的编码解码
-  - `path_utils.py`：本地路径转为前端可访问的 URL 路径
-
-#### `back/static`
-
-这里保存静态资源与模型文件，当前关键模型包括：
-
-- `back/static/models/low_light/diffusion_low_light_1x3x384x640.onnx`
-- `back/static/models/yolo26_bdd100k/yolo26s.onnx`
-- `back/static/models/yolo26_bdd100k/yolo26s.pt`
-- `back/static/models/yolo26_bdd100k/yolo26n.pt`
-
-接口处理过程中生成的上传图、增强图、检测图，也会保存在 `back/static` 下对应目录，便于前端直接访问。
-
-### `front` 前端目录
-
-`front` 是面向展示的 Web 界面，基于 Vue 3 + Vite 实现。
-
-关键内容如下：
-
-- `front/src/router/index.js`：路由配置
-- `front/src/services/api.js`：前端对后端接口的统一封装
-- `front/src/views/HomeView.vue`：首页，展示三阶段流程海报或首页媒体资源
-- `front/src/views/DemoView.vue`：交互演示页，支持上传图片并触发完整处理流程
-- `front/src/components/ComparisonViewer.vue`：对比滑块组件，用于原图/增强图、增强图/检测图对比
-- `front/public/posters/`：首页默认海报资源
-
-当前前端主要包含两个页面：
-
-- `/`：展示项目流程概览
-- `/demo`：上传图片并查看处理结果
-
-### `Diffusion-Low-Light`
-
-这一部分保存低照度增强相关代码和模型资源，是后端低照度增强能力的来源之一。当前后端实际运行时使用的是已经导出的 ONNX 模型文件，但仓库中保留了原始模型代码，便于：
-
-- 追溯模型来源
-- 后续重新导出模型
-- 替换或改进增强算法
-
-### `yolo26`
-
-这一部分保存 YOLO26 相关代码、配置、数据集说明、测试和训练资源。当前后端运行时主要依赖其中导出的权重/模型文件和项目内封装，但保留完整目录有两个作用：
-
-- 可继续做训练、验证或模型替换
-- 可追踪检测模型的配置、类别和推理逻辑
-
-## 当前已实现能力
-
-### 1. 低照度增强
-
-接口：
-
-- `POST /api/low_light_file/enhance`
-
-能力说明：
-
-- 接收一张图片文件
-- 校验扩展名和 MIME 类型
-- 调用低照度增强模型进行推理
-- 保存增强结果图片
-- 返回原图地址、增强图地址、耗时和图像尺寸
-
-### 2. 目标检测
-
-接口：
-
-- `POST /api/yolo26_bdd100k_file/detect`
-
-能力说明：
-
-- 接收一张图片文件
-- 支持 `conf_thres` 和 `iou_thres` 阈值参数
-- 调用 YOLO26 BDD100K 检测模型
-- 保存带框结果图
-- 返回检测列表、目标数量、阈值和耗时信息
-
-### 3. 串联处理 Pipeline
-
-接口：
-
-- `POST /api/pipeline_file/process`
-
-这是当前项目最核心的接口，会按顺序完成：
-
-1. 上传原图
-2. 低照度增强
-3. 检测增强后的图片
-4. 汇总返回整体结果
-
-返回数据除图片地址外，还包含：
-
-- `detections`：检测目标列表
-- `count`：目标数量
-- `timing_ms`：增强、检测、总耗时
-- `summary`：目标数、平均置信度、整体时延
-- `scene_analysis`：基于检测结果生成的简单文字分析
-
-### 4. 状态与辅助接口
-
-- `GET /api/health`：健康检查，返回服务状态和模型加载状态
-- `GET /api/models`：返回模型文件是否就绪、是否已加载
-- `GET /api/homepage-media`：返回首页展示媒体配置
-- `GET /docs`：Swagger 接口文档
-
-## 主要技术栈
-
-### 前端
-
-- Vue 3
-- Vue Router
-- Vite
-
-### 后端
-
-- Flask
-- Flask-Cors
-- Flask-RESTX
-- OpenCV
-- ONNX Runtime
-- Pillow
-- NumPy
-
-### 模型与算法
-
-- Diffusion Low Light 低照度增强
-- YOLO26 + BDD100K 目标检测
-
-## 运行前提
-
-在启动项目前，需要确认以下内容：
-
-- 本机已安装 Python 3 环境
-- 本机已安装 Node.js 和 npm
-- 后端虚拟环境已准备完成
-- `back/static/models/` 下的模型文件存在
-- 如为 Apple Silicon 环境，后端虚拟环境可能需要使用 `arm64` 启动
-
-后端默认限制上传大小为 `16MB`。
-
-## 启动方式
-
-### 1. 启动后端
-
-当前本机环境下，后端虚拟环境需要使用 `arm64` 启动：
-
-```bash
-cd /Users/dong/Documents/code/4c/system/back
-arch -arm64 .venv/bin/python run.py
+```text
+上传图片或视频
+  -> 可选：低照度增强 / 轻量低照度增强 / 去雨 / 去雾
+  -> 可选：YOLO26 目标检测
+  -> 保存中间结果和最终结果到 back/static
+  -> 返回静态资源地址、检测框、耗时、视频元信息和场景摘要
+  -> 前端展示每一步结果并支持原始/输出对比
 ```
 
-后端默认地址：
+对于视频，后端会逐帧处理并导出结果视频；代码中通过共享线程池并行处理帧，线程数可由环境变量 `VIDEO_PROCESS_WORKERS` 控制。
 
-- `http://127.0.0.1:5001`
-- Swagger 文档：`http://127.0.0.1:5001/docs`
+## 前端说明
 
-### 2. 启动前端
+前端基于 Vue 3、Vue Router 和 Vite。
 
-```bash
-cd /Users/dong/Documents/code/4c/system/front
-npm run dev
-```
+主要页面：
 
-前端默认地址：
+- `/`：首页。展示复杂天气感知系统、功能覆盖、可搭配流程，以及首页媒体对比。首页会请求 `GET /api/homepage-media`，优先读取 `back/static/demo/` 下的示例视频，缺失时回退到 `front/public/posters/` 中的默认 SVG 海报。
+- `/demo`：演示页。支持上传图片或视频，使用快捷模板或拖拽/点击模块来自定义流程，然后按顺序运行。
 
-- `http://127.0.0.1:5173`
+演示页内置模块：
 
-## 前后端联调说明
+- `DET`：直接识别，调用 `POST /api/yolo26_bdd100k_file/detect`
+- `FOG`：图像去雾，调用 `POST /api/c2pnet_file/dehaze`
+- `RAIN`：图像去雨，调用 `POST /api/derain_file/derain`
+- `LUX`：低光增强，调用 `POST /api/low_light_file/enhance`
+- `FAST`：轻量低光增强，调用 `POST /api/lightweight_low_light_file/enhance`
 
-前端默认请求：
+前端默认后端地址：
 
 ```bash
 http://127.0.0.1:5001/api
 ```
 
-如需修改后端地址，可在前端环境变量中设置：
+可通过环境变量覆盖：
 
 ```bash
 VITE_API_ORIGIN=http://127.0.0.1:5001
+VITE_API_BASE_URL=http://127.0.0.1:5001/api
 ```
 
-前端内部会基于这个地址自动拼接：
+## 后端说明
+
+后端基于 Flask、Flask-CORS、Flask-RESTX、OpenCV、ONNX Runtime、Pillow 和 NumPy。入口为 `back/run.py`，默认监听 `0.0.0.0:5001`，Swagger 文档位于 `/docs`。
+
+`back/app/__init__.py` 会注册这些命名空间：
+
+- `/api/low_light_file`
+- `/api/lightweight_low_light_file`
+- `/api/c2pnet_file`
+- `/api/derain_file`
+- `/api/yolo26_bdd100k_file`
+- `/api/pipeline_file`
+- `/api/lightweight_pipeline_file`
+- `/api/dehaze_pipeline_file`
+- `/api/derain_pipeline_file`
+
+上传限制由 `back/config.py` 控制，当前最大为 `256MB`。
+
+支持的媒体格式：
+
+- 图片：`png`、`jpg`、`jpeg`
+- 视频：`mp4`、`mov`、`avi`、`m4v`、`webm`
+
+## API 列表
+
+### 状态与文档
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 健康检查，返回服务状态和模型加载状态 |
+| `GET` | `/api/models` | 返回模型文件是否存在、是否已加载、ONNX Runtime providers |
+| `GET` | `/api/homepage-media` | 返回首页三阶段展示媒体 |
+| `GET` | `/docs` | Swagger 接口文档 |
+
+### 单模型接口
+
+| 方法 | 路径 | 能力 |
+| --- | --- | --- |
+| `POST` | `/api/low_light_file/enhance` | Diffusion Low Light 低照度增强 |
+| `POST` | `/api/lightweight_low_light_file/enhance` | LYT-Net 轻量低照度增强 |
+| `POST` | `/api/c2pnet_file/dehaze` | C2PNet 去雾 |
+| `POST` | `/api/derain_file/derain` | Attentive GAN 去雨 |
+| `POST` | `/api/yolo26_bdd100k_file/detect` | YOLO26 BDD100K 目标检测 |
+
+请求格式均为 `multipart/form-data`：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `file` | 是 | 上传图片或视频 |
+| `conf_thres` | 否 | 检测置信度阈值，默认 `0.25`；检测接口和组合检测流程使用 |
+| `iou_thres` | 否 | NMS IoU 阈值，默认 `0.45`；检测接口和组合检测流程使用 |
+
+### 组合流程接口
+
+| 方法 | 路径 | 流程 |
+| --- | --- | --- |
+| `POST` | `/api/pipeline_file/process` | Diffusion 低光增强 -> YOLO26 检测 |
+| `POST` | `/api/lightweight_pipeline_file/process` | 轻量低光增强 -> YOLO26 检测 |
+| `POST` | `/api/dehaze_pipeline_file/process` | C2PNet 去雾 -> YOLO26 检测 |
+| `POST` | `/api/derain_pipeline_file/process` | Attentive GAN 去雨 -> YOLO26 检测 |
+
+组合接口返回内容包括中间结果地址、最终检测结果地址、检测框、目标数量、阈值、各阶段耗时、汇总信息和简单场景分析。
+
+## 返回数据重点字段
+
+接口统一返回形态：
+
+```json
+{
+  "code": 200,
+  "message": "处理成功",
+  "data": {}
+}
+```
+
+常见 `data` 字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `media_type` | `image` 或 `video` |
+| `upload_image` / `upload_media` | 原始上传文件的静态资源地址 |
+| `enhanced_image` / `enhanced_media` | 组合流程的中间增强/复原结果地址 |
+| `result_image` / `result_media` | 单模型或最终检测结果地址 |
+| `detections` | YOLO26 检测框列表 |
+| `count` | 检测目标数量；视频检测接口中为最后一个有检测结果帧的目标数 |
+| `thresholds` | `conf_thres` 和 `iou_thres` |
+| `timing_ms` | 模型推理、逐帧处理、墙钟耗时等统计 |
+| `image_shape` | 图像结果尺寸 |
+| `video_meta` | 视频宽高、帧率、帧数、时长、编码器、已处理帧数 |
+| `summary` | 目标数量、平均置信度、总时延、视频检测统计等摘要 |
+| `scene_analysis` | 基于检测类别生成的简单中文场景分析 |
+
+检测框结构：
+
+```json
+{
+  "class_id": 2,
+  "class_name": "car",
+  "score": 0.91,
+  "bbox": {
+    "x1": 120.5,
+    "y1": 80.0,
+    "x2": 260.3,
+    "y2": 190.8
+  }
+}
+```
+
+## 模型文件
+
+后端会从 `back/static/models/` 下按固定路径加载模型：
+
+| 能力 | 模型文件 |
+| --- | --- |
+| Diffusion Low Light | `back/static/models/low_light/diffusion_low_light_1x3x384x640.onnx` |
+| LYT-Net 轻量低光 | `back/static/models/low_light/lyt_net_lolv2_real_640x360.onnx` |
+| C2PNet 去雾 | `back/static/models/c2p/c2pnet_outdoor_360x640.onnx` |
+| Attentive GAN 去雨 | `back/static/models/derain/attentive_gan_derainnet_360x640.onnx` |
+| YOLO26 BDD100K | `back/static/models/yolo26_bdd100k/yolo26s.onnx` |
+
+`GET /api/models` 可检查模型文件是否存在、是否已经被懒加载，以及当前 ONNX Runtime 使用的执行 provider。
+
+ONNX Runtime provider 选择逻辑：
+
+- 默认按 `CUDAExecutionProvider`、`DmlExecutionProvider`、`CPUExecutionProvider` 优先级选择可用 provider
+- 如需启用 CoreML，可设置 `ENABLE_COREML=1`
+- 没有 GPU provider 时会回退到 `CPUExecutionProvider`
+
+## 运行方式
+
+### 1. 启动后端
 
 ```bash
-${VITE_API_ORIGIN}/api
+cd /Users/dong/Documents/4c/back
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
 ```
 
-## 返回结果说明
+Apple Silicon 如果虚拟环境或 ONNX Runtime provider 对架构敏感，可使用：
 
-以串联接口为例，前端最关心的返回内容包括：
+```bash
+arch -arm64 .venv/bin/python run.py
+```
 
-- `upload_image`：原图静态资源地址
-- `enhanced_image`：增强图地址
-- `result_image`：检测结果图地址
-- `detections`：检测框明细
-- `count`：检测到的目标数量
-- `timing_ms`：各阶段耗时统计
-- `scene_analysis`：结果摘要说明
+后端地址：
 
-这使得前端不仅能显示图片，还可以展示处理性能和语义层面的结果摘要。
+- API：`http://127.0.0.1:5001/api`
+- Swagger：`http://127.0.0.1:5001/docs`
+- 静态资源：`http://127.0.0.1:5001/static/...`
 
-## 项目特点
+### 2. 启动前端
 
-- 不是单一模型演示，而是完整的端到端流程
-- 同时支持独立增强、独立检测、增强后检测三种能力
-- 结果图会落盘保存，方便展示与复用
-- 接口文档可直接通过 Swagger 查看
-- 前端已经具备基础演示页面和对比展示组件
-- 后端已经包含模型状态检查、日志记录和统一异常处理
+```bash
+cd /Users/dong/Documents/4c/front
+npm install
+npm run dev
+```
 
+前端地址：
+
+- `http://127.0.0.1:5173`
+
+### 3. 构建前端
+
+```bash
+cd /Users/dong/Documents/4c/front
+npm run build
+npm run preview
+```
+
+## 示例调用
+
+直接检测图片：
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/yolo26_bdd100k_file/detect \
+  -F "file=@/path/to/image.jpg" \
+  -F "conf_thres=0.25" \
+  -F "iou_thres=0.45"
+```
+
+低光增强后检测：
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/pipeline_file/process \
+  -F "file=@/path/to/night-road.jpg" \
+  -F "conf_thres=0.25" \
+  -F "iou_thres=0.45"
+```
+
+去雨处理：
+
+```bash
+curl -X POST http://127.0.0.1:5001/api/derain_file/derain \
+  -F "file=@/path/to/rain.mp4"
+```
+
+## 生成文件与日志
+
+上传文件和结果文件会写入 `back/static/images/` 下的不同子目录，例如：
+
+- `back/static/images/low_light/uploads`
+- `back/static/images/low_light/results`
+- `back/static/images/lightweight_low_light/uploads`
+- `back/static/images/lightweight_low_light/results`
+- `back/static/images/c2pnet/uploads`
+- `back/static/images/c2pnet/results`
+- `back/static/images/derain/uploads`
+- `back/static/images/derain/results`
+- `back/static/images/yolo26_bdd100k/uploads`
+- `back/static/images/yolo26_bdd100k/results`
+- `back/static/images/*_pipeline/...`
+
+首页固定示例视频单独放在：
+
+- `back/static/demo/raw.mp4`
+- `back/static/demo/enhanced.mp4`
+- `back/static/demo/detected.mp4`
+
+后端日志写入：
+
+```text
+back/logs/showcase-backend.log
+```
+
+## 开发注意事项
+
+- 后端模型采用懒加载，首次调用某个能力时会加载对应 ONNX 模型。
+- 视频处理会在输出目录中生成 `.mp4` 结果，编码器优先尝试 `avc1`、`H264`、`mp4v`，Windows 上优先 `mp4v`。
+- 前端自定义编排逐步调用单模型接口；后端也保留了固定组合流程接口，便于直接联调和性能统计。
+- `front/src/views/ApiView.vue` 是早期接口说明页面，目前未注册到路由，实际演示入口以 `/demo` 为准。
+- `Diffusion-Low-Light/` 和 `yolo26/` 主要保留源码、训练/评估资源和模型溯源；当前 Web Demo 运行时主要依赖 `back/static/models/` 中导出的模型文件。
