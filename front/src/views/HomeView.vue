@@ -5,7 +5,7 @@
         <p class="section-tag">Weather Vision System</p>
         <h2>复杂天气感知展示系统</h2>
         <p class="hero-lead">
-          雨雾夜间道路场景下的复原、视频处理与目标识别，统一入口演示与对比。
+          雨雾夜间道路场景下的复原、视频处理与目标识别。
         </p>
         <RouterLink class="primary-button hero-cta" to="/demo">进入功能展示</RouterLink>
       </div>
