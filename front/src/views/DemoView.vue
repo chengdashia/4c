@@ -104,7 +104,13 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 import ComparisonViewer from '../components/ComparisonViewer.vue'
-import { resolveAssetUrl, runDehazePipeline, runLightweightPipeline, runVisionPipeline } from '../services/api'
+import {
+  resolveAssetUrl,
+  runDehazePipeline,
+  runDerainPipeline,
+  runLightweightPipeline,
+  runVisionPipeline,
+} from '../services/api'
 
 const pipelineOptions = [
   {
@@ -157,6 +163,23 @@ const pipelineOptions = [
     loadingImage: '图片去雾与识别中，请稍候。',
     loadingVideo: '视频逐帧去雾与识别中，请等待结果导出。',
     runner: runDehazePipeline,
+  },
+  {
+    value: 'derain',
+    label: '去雨识别',
+    status: 'Input → Derain → Detect',
+    middleLabel: '去雨结果',
+    compareOneImage: '原始图片 / 去雨结果',
+    compareOneVideo: '原始视频 / 去雨视频',
+    compareTwoImage: '去雨结果 / 检测结果',
+    compareTwoVideo: '去雨视频 / 检测视频',
+    emptyImage: '上传图片后显示去雨对比。',
+    emptyVideo: '上传视频后显示去雨对比。',
+    processingImage: '处理完成后显示检测对比。',
+    processingVideo: '视频处理完成后显示检测对比。',
+    loadingImage: '图片去雨与识别中，请稍候。',
+    loadingVideo: '视频逐帧去雨与识别中，请等待结果导出。',
+    runner: runDerainPipeline,
   },
 ]
 

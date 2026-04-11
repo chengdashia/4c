@@ -53,6 +53,17 @@ export async function runDehazePipeline({ file, confidence = 0.25, iou = 0.45 })
   })
 }
 
+export async function runDerainPipeline({ file, confidence = 0.25, iou = 0.45 }) {
+  return runPipelineRequest({
+    endpoint: `${API_BASE}/derain_pipeline_file/process`,
+    file,
+    confidence,
+    iou,
+    fallbackMessage: '去雨识别接口调用失败',
+    invalidMessage: '去雨识别接口返回了无效数据',
+  })
+}
+
 export async function runLightweightPipeline({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
     endpoint: `${API_BASE}/lightweight_pipeline_file/process`,

@@ -37,7 +37,9 @@ def create_app():
     api.init_app(app)
 
     from .routes.c2pnet import c2pnet_file_ns
+    from .routes.attentive_gan_derainnet import derain_file_ns
     from .routes.dehaze_pipeline import dehaze_pipeline_file_ns
+    from .routes.derain_pipeline import derain_pipeline_file_ns
     from .routes.lightweight_low_light import lightweight_low_light_file_ns
     from .routes.lightweight_pipeline import lightweight_pipeline_file_ns
     from .routes.low_light import low_light_file_ns
@@ -45,7 +47,9 @@ def create_app():
     from .routes.yolo26_bdd100k import yolo26_file_ns
 
     api.add_namespace(c2pnet_file_ns, path="/api/c2pnet_file")
+    api.add_namespace(derain_file_ns, path="/api/derain_file")
     api.add_namespace(dehaze_pipeline_file_ns, path="/api/dehaze_pipeline_file")
+    api.add_namespace(derain_pipeline_file_ns, path="/api/derain_pipeline_file")
     api.add_namespace(lightweight_low_light_file_ns, path="/api/lightweight_low_light_file")
     api.add_namespace(lightweight_pipeline_file_ns, path="/api/lightweight_pipeline_file")
     api.add_namespace(low_light_file_ns, path="/api/low_light_file")
