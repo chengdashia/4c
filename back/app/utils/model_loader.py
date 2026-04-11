@@ -115,7 +115,7 @@ def load_yolo26_model(conf_thres=0.25, iou_thres=0.45):
 def load_c2pnet_model():
     global _c2pnet_model, _c2pnet_loaded
     if getattr(_thread_local, "c2pnet_model", None) is None:
-        model_path = get_static_model_path("c2p", "c2pnet_outdoor_640x640.onnx")
+        model_path = get_static_model_path("c2p", "c2pnet_outdoor_360x640.onnx")
         check_model_file(model_path)
         _thread_local.c2pnet_model = C2PNetONNX(
             model_path,
@@ -319,7 +319,7 @@ def detect_yolo26_raw(image, conf_thres=0.25, iou_thres=0.45):
 def get_model_status():
     low_light_path = get_static_model_path("low_light", "diffusion_low_light_1x3x384x640.onnx")
     yolo_path = get_static_model_path("yolo26_bdd100k", "yolo26s.onnx")
-    c2pnet_path = get_static_model_path("c2p", "c2pnet_outdoor_640x640.onnx")
+    c2pnet_path = get_static_model_path("c2p", "c2pnet_outdoor_360x640.onnx")
     lightweight_low_light_path = get_static_model_path("low_light", "lyt_net_lolv2_real_640x360.onnx")
     derain_path = get_static_model_path("derain", "attentive_gan_derainnet_360x640.onnx")
     return [

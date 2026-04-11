@@ -221,9 +221,9 @@
             @pointerdown="onFilmTrackPointerDown"
           >
             <div
+              ref="filmThumbRef"
               class="film-scroll-persistent-thumb"
-              :class="{ 'is-inactive': filmBar.inactive }"
-              :style="filmThumbStyle"
+              :class="{ 'is-inactive': filmScrollInactive }"
               @pointerdown.stop="onFilmThumbPointerDown"
             />
           </div>
@@ -350,14 +350,23 @@ const liveSteps = ref(null)
 const filmStripWrapRef = ref(null)
 const filmStripRef = ref(null)
 const filmScrollTrackRef = ref(null)
-const filmBar = ref({ thumbW: 0, thumbLeft: 0, inactive: true })
+const filmThumbRef = ref(null)
+/** 无溢出时轨道为「满宽占位」，用于样式 */
+const filmScrollInactive = ref(true)
 let filmStripResizeObserver = null
-let filmThumbDrag = { active: false, startX: 0, startScroll: 0 }
-
-const filmThumbStyle = computed(() => ({
-  width: `${filmBar.value.thumbW}px`,
-  transform: `translateX(${filmBar.value.thumbLeft}px)`,
-}))
+/** 拖动滑块时跳过重算，避免每帧触发 Vue 更新与 scroll 回调叠加 */
+let filmBarDragging = false
+let filmThumbDragRaf = 0
+let filmThumbPendingClientX = null
+let filmThumbDrag = {
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startScroll: 0,
+  maxScroll: 0,
+  thumbW: 0,
+  maxThumbLeft: 0,
+}
 
 const isPreviewVideo = computed(() => (selectedFile.value?.type || '').startsWith('video/'))
 const mediaKind = computed(() => (isPreviewVideo.value ? 'video' : 'image'))
@@ -409,7 +418,16 @@ const displaySteps = computed(() => {
   return buildEmptySteps()
 })
 
+function applyFilmThumbGeometry(thumbW, thumbLeft) {
+  const el = filmThumbRef.value
+  if (!el) return
+  el.style.width = `${thumbW}px`
+  el.style.transform = `translate3d(${thumbLeft}px, 0, 0)`
+}
+
 function updateFilmScrollBar() {
+  if (filmBarDragging) return
+
   const strip = filmStripRef.value
   const track = filmScrollTrackRef.value
   if (!strip || !track) return
@@ -419,22 +437,16 @@ function updateFilmScrollBar() {
 
   const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth)
   if (maxScroll <= 0) {
-    filmBar.value = {
-      thumbW: trackW,
-      thumbLeft: 0,
-      inactive: true,
-    }
+    filmScrollInactive.value = true
+    applyFilmThumbGeometry(trackW, 0)
     return
   }
 
   const thumbW = Math.max(40, (strip.clientWidth / strip.scrollWidth) * trackW)
   const maxThumbLeft = Math.max(0, trackW - thumbW)
   const thumbLeft = maxThumbLeft * (strip.scrollLeft / maxScroll)
-  filmBar.value = {
-    thumbW,
-    thumbLeft,
-    inactive: false,
-  }
+  filmScrollInactive.value = false
+  applyFilmThumbGeometry(thumbW, thumbLeft)
 }
 
 function onFilmTrackPointerDown(event) {
@@ -442,7 +454,7 @@ function onFilmTrackPointerDown(event) {
   if (event.target?.classList?.contains('film-scroll-persistent-thumb')) return
   const strip = filmStripRef.value
   const track = filmScrollTrackRef.value
-  if (!strip || !track || filmBar.value.inactive) return
+  if (!strip || !track || filmScrollInactive.value) return
 
   const rect = track.getBoundingClientRect()
   const ratio = (event.clientX - rect.left) / rect.width
@@ -452,42 +464,91 @@ function onFilmTrackPointerDown(event) {
 }
 
 function onFilmThumbPointerDown(event) {
-  if (filmBar.value.inactive) return
+  if (filmScrollInactive.value) return
   event.preventDefault()
-  const strip = filmStripRef.value
-  if (!strip) return
 
+  const strip = filmStripRef.value
+  const track = filmScrollTrackRef.value
+  const thumbEl = filmThumbRef.value
+  if (!strip || !track || !thumbEl) return
+
+  const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth)
+  const trackW = track.clientWidth
+  if (trackW <= 0 || maxScroll <= 0) return
+
+  const thumbW = Math.max(40, (strip.clientWidth / strip.scrollWidth) * trackW)
+  const maxThumbLeft = Math.max(0, trackW - thumbW)
+  if (maxThumbLeft <= 0) return
+
+  filmBarDragging = true
   filmThumbDrag = {
     active: true,
+    pointerId: event.pointerId,
     startX: event.clientX,
     startScroll: strip.scrollLeft,
+    maxScroll,
+    thumbW,
+    maxThumbLeft,
+  }
+  filmThumbPendingClientX = event.clientX
+  thumbEl.classList.add('is-dragging')
+
+  try {
+    thumbEl.setPointerCapture(event.pointerId)
+  } catch (_e) {
+    /* ignore */
+  }
+
+  const flushThumbDrag = () => {
+    filmThumbDragRaf = 0
+    if (!filmThumbDrag.active || filmThumbPendingClientX == null) return
+    const clientX = filmThumbPendingClientX
+    const { startX, startScroll, maxScroll: mxs, thumbW: tw, maxThumbLeft: mtl } = filmThumbDrag
+    const dx = clientX - startX
+    let nextScroll = startScroll + (dx / mtl) * mxs
+    nextScroll = Math.min(mxs, Math.max(0, nextScroll))
+    strip.scrollLeft = nextScroll
+    const thumbLeft = mtl * (nextScroll / mxs)
+    thumbEl.style.width = `${tw}px`
+    thumbEl.style.transform = `translate3d(${thumbLeft}px, 0, 0)`
   }
 
   const move = (e) => {
     if (!filmThumbDrag.active) return
-    const track = filmScrollTrackRef.value
-    if (!track || !strip) return
-    const maxScroll = Math.max(0, strip.scrollWidth - strip.clientWidth)
-    const trackW = track.clientWidth
-    const thumbW = filmBar.value.thumbW
-    const maxThumbLeft = Math.max(0, trackW - thumbW)
-    if (maxThumbLeft <= 0 || maxScroll <= 0) return
-    const dx = e.clientX - filmThumbDrag.startX
-    const nextScroll = filmThumbDrag.startScroll + (dx / maxThumbLeft) * maxScroll
-    strip.scrollLeft = Math.min(maxScroll, Math.max(0, nextScroll))
+    filmThumbPendingClientX = e.clientX
+    if (!filmThumbDragRaf) {
+      filmThumbDragRaf = requestAnimationFrame(flushThumbDrag)
+    }
+  }
+
+  const up = (e) => {
+    if (filmThumbDragRaf) {
+      cancelAnimationFrame(filmThumbDragRaf)
+      filmThumbDragRaf = 0
+    }
+    if (filmThumbDrag.active) {
+      if (e?.clientX != null) filmThumbPendingClientX = e.clientX
+      if (filmThumbPendingClientX != null) flushThumbDrag()
+    }
+    filmThumbDrag.active = false
+    filmBarDragging = false
+    filmThumbPendingClientX = null
+    thumbEl.classList.remove('is-dragging')
+    const pid = filmThumbDrag.pointerId
+    try {
+      if (pid != null) thumbEl.releasePointerCapture(pid)
+    } catch (_err) {
+      /* ignore */
+    }
+    document.removeEventListener('pointermove', move)
+    document.removeEventListener('pointerup', up)
+    document.removeEventListener('pointercancel', up)
     updateFilmScrollBar()
   }
 
-  const up = () => {
-    filmThumbDrag.active = false
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    window.removeEventListener('pointercancel', up)
-  }
-
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-  window.addEventListener('pointercancel', up)
+  document.addEventListener('pointermove', move, { passive: true })
+  document.addEventListener('pointerup', up)
+  document.addEventListener('pointercancel', up)
 }
 
 watch(
@@ -557,6 +618,11 @@ function resultPath(data) {
 
 function extensionFor(kind) {
   return kind === 'video' ? 'mp4' : 'jpg'
+}
+
+function shouldUseOriginalForDerain(moduleKey, index) {
+  if (moduleKey !== 'derain') return false
+  return flowModules.value.slice(0, index).some((key) => key === 'low-light' || key === 'lightweight-low-light')
 }
 
 function addModule(moduleKey) {
@@ -694,7 +760,8 @@ async function submitPipeline() {
     for (const [index, moduleKey] of flowModules.value.entries()) {
       executingIndex.value = index + 1
       const module = moduleMap[moduleKey]
-      const data = await module.runner({ file: currentFile })
+      const inputFile = shouldUseOriginalForDerain(moduleKey, index) ? selectedFile.value : currentFile
+      const data = await module.runner({ file: inputFile })
       const outputPath = resultPath(data)
       const outputKind = data.media_type || mediaKind.value
 
@@ -708,7 +775,7 @@ async function submitPipeline() {
         currentFile = await fileFromAssetUrl(
           outputPath,
           `${moduleKey}-${index + 1}.${extensionFor(outputKind)}`,
-          currentFile.type,
+          inputFile.type,
         )
       }
     }
@@ -1326,13 +1393,16 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease;
 }
 
+.film-scroll-persistent-thumb.is-dragging {
+  will-change: transform;
+  transition: none;
+  cursor: grabbing;
+}
+
 .film-scroll-persistent-thumb.is-inactive {
   cursor: default;
 }
 
-.film-scroll-persistent-thumb:active:not(.is-inactive) {
-  cursor: grabbing;
-}
 
 .film-card {
   flex: 0 0 min(440px, 90vw);

@@ -90,7 +90,7 @@ class DiffusionLowLight:
 
         output_image = np.squeeze(result[0])
         output_image = output_image.transpose(1, 2, 0)
-        output_image = (output_image * 255).astype(np.uint8)
+        output_image = np.clip(output_image * 255, 0, 255).astype(np.uint8)
         output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
         output_image = cv2.resize(output_image, (image.shape[1], image.shape[0]))
         end_time = time.perf_counter()
@@ -143,7 +143,7 @@ class DiffusionLowLight:
         outputs = []
         for output_image, (original_width, original_height) in zip(output_batch, original_sizes):
             output_image = output_image.transpose(1, 2, 0)
-            output_image = (output_image * 255).astype(np.uint8)
+            output_image = np.clip(output_image * 255, 0, 255).astype(np.uint8)
             output_image = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
             output_image = cv2.resize(output_image, (original_width, original_height))
             outputs.append(output_image)
