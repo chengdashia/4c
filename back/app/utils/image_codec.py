@@ -2,14 +2,13 @@ import base64
 import binascii
 import io
 import os
+import re
 import uuid
 from datetime import datetime
 
 import cv2
 import numpy as np
-from flask import Request
 from PIL import Image
-from werkzeug.utils import secure_filename
 
 
 class ImageDecodeError(ValueError):
@@ -24,7 +23,7 @@ def _decode_image_bytes(image_bytes):
     return image
 
 
-def decode_request_image(request: Request):
+def decode_request_image(request):
     if "file" in request.files:
         file = request.files["file"]
         if not file.filename:
@@ -125,6 +124,12 @@ def create_unique_filename(filename):
     name, ext = os.path.splitext(filename)
     safe_ext = ext if ext else ".jpg"
     return f"{name}_{timestamp}_{unique_id}{safe_ext}"
+
+
+def secure_filename(filename):
+    filename = os.path.basename(filename).strip().replace(" ", "_")
+    filename = re.sub(r"[^A-Za-z0-9_.-]", "", filename)
+    return filename or "upload"
 
 
 def save_upload_file(file_storage, save_dir):

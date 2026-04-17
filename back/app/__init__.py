@@ -2,125 +2,133 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-from flask import Flask, jsonify, render_template, request
-from jinja2 import TemplateNotFound
-from flask_cors import CORS
-from flask_restx import Api
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
 
 import config
 import homepage_media
+from app.http import error_response
 from app.utils.image_codec import ImageDecodeError
 from app.utils.model_loader import get_model_status
 from app.utils.video_processing import VideoProcessingError
 
-api = Api(
-    version="1.0",
-    title="Showcase Vision API",
-    description="Low-light enhancement and YOLO26 detection services.",
-    doc="/docs",
-)
-
 
 def create_app():
     app_root = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-    app = Flask(
-        __name__,
-        static_folder=os.path.join(app_root, "static"),
-        static_url_path="/static",
-        template_folder=os.path.join(app_root, "templates"),
+    app = FastAPI(
+        title="Showcase Vision API",
+        description="Low-light enhancement and YOLO26 detection services.",
+        version="1.0",
     )
-    app.config.from_object(config.DevelopmentConfig)
-    app.json.ensure_ascii = False
+    app.state.app_root = app_root
+    app.state.max_content_length = config.DevelopmentConfig.MAX_CONTENT_LENGTH
 
-    CORS(app)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     configure_logging(app, app_root)
-    api.init_app(app)
 
-    from .routes.c2pnet import c2pnet_file_ns
-    from .routes.attentive_gan_derainnet import derain_file_ns
-    from .routes.dehaze_pipeline import dehaze_pipeline_file_ns
-    from .routes.derain_pipeline import derain_pipeline_file_ns
-    from .routes.lightweight_low_light import lightweight_low_light_file_ns
-    from .routes.lightweight_pipeline import lightweight_pipeline_file_ns
-    from .routes.low_light import low_light_file_ns
-    from .routes.pipeline import pipeline_file_ns
-    from .routes.yolo26_bdd100k import yolo26_file_ns
+    static_dir = os.path.join(app_root, "static")
+    os.makedirs(static_dir, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-    api.add_namespace(c2pnet_file_ns, path="/api/c2pnet_file")
-    api.add_namespace(derain_file_ns, path="/api/derain_file")
-    api.add_namespace(dehaze_pipeline_file_ns, path="/api/dehaze_pipeline_file")
-    api.add_namespace(derain_pipeline_file_ns, path="/api/derain_pipeline_file")
-    api.add_namespace(lightweight_low_light_file_ns, path="/api/lightweight_low_light_file")
-    api.add_namespace(lightweight_pipeline_file_ns, path="/api/lightweight_pipeline_file")
-    api.add_namespace(low_light_file_ns, path="/api/low_light_file")
-    api.add_namespace(yolo26_file_ns, path="/api/yolo26_bdd100k_file")
-    api.add_namespace(pipeline_file_ns, path="/api/pipeline_file")
+    register_routes(app, app_root)
+    register_exception_handlers(app)
+
+    @app.middleware("http")
+    async def enforce_max_content_length(request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > app.state.max_content_length:
+            return error_response("上传文件过大，最大支持 256MB", 413)
+        return await call_next(request)
+
+    app.logger.info("Showcase Vision API started")
+    return app
+
+
+def register_routes(app, app_root):
+    from .routes.attentive_gan_derainnet import router as derain_router
+    from .routes.c2pnet import router as c2pnet_router
+    from .routes.dehaze_pipeline import router as dehaze_pipeline_router
+    from .routes.derain_pipeline import router as derain_pipeline_router
+    from .routes.lightweight_low_light import router as lightweight_low_light_router
+    from .routes.lightweight_pipeline import router as lightweight_pipeline_router
+    from .routes.low_light import router as low_light_router
+    from .routes.pipeline import router as pipeline_router
+    from .routes.yolo26_bdd100k import router as yolo26_router
 
     @app.get("/api/health")
     def health():
         models = get_model_status()
-        return jsonify(
-            {
-                "status": "ready",
-                "message": "Showcase Vision API is ready.",
-                "models": models,
-                "model_loaded": any(model["loaded"] for model in models),
-            }
-        )
+        return {
+            "status": "ready",
+            "message": "Showcase Vision API is ready.",
+            "models": models,
+            "model_loaded": any(model["loaded"] for model in models),
+        }
 
     @app.get("/api/models")
     def models():
-        return jsonify({"code": 200, "data": get_model_status()})
+        return {"code": 200, "data": get_model_status()}
 
     @app.get("/api/homepage-media")
     def home_page_media():
-        return jsonify({"code": 200, "data": homepage_media.get_home_page_media(app_root)})
+        return {"code": 200, "data": homepage_media.get_home_page_media(app_root)}
 
     @app.get("/")
     def index():
-        try:
-            return render_template("main.html")
-        except TemplateNotFound:
-            return jsonify({"code": 200, "message": "Showcase Vision API is running."})
+        return {"code": 200, "message": "Showcase Vision API is running."}
 
-    @app.errorhandler(413)
-    def file_too_large(_error):
-        return jsonify({"code": 413, "message": "上传文件过大，最大支持 256MB"}), 413
+    app.include_router(yolo26_router, prefix="/api")
+    app.include_router(low_light_router, prefix="/api")
+    app.include_router(lightweight_low_light_router, prefix="/api")
+    app.include_router(c2pnet_router, prefix="/api")
+    app.include_router(derain_router, prefix="/api")
+    app.include_router(pipeline_router, prefix="/api")
+    app.include_router(dehaze_pipeline_router, prefix="/api")
+    app.include_router(derain_pipeline_router, prefix="/api")
+    app.include_router(lightweight_pipeline_router, prefix="/api")
 
-    @app.errorhandler(ImageDecodeError)
-    def image_decode_error(error):
-        return jsonify({"code": 400, "message": str(error)}), 400
 
-    @app.errorhandler(VideoProcessingError)
-    def video_processing_error(error):
-        return jsonify({"code": 400, "message": str(error)}), 400
+def register_exception_handlers(app):
+    @app.exception_handler(ImageDecodeError)
+    async def image_decode_error(_request, error):
+        return error_response(str(error), 400)
 
-    @app.errorhandler(FileNotFoundError)
-    def file_not_found(error):
-        return jsonify({"code": 500, "message": str(error)}), 500
+    @app.exception_handler(VideoProcessingError)
+    async def video_processing_error(_request, error):
+        return error_response(str(error), 400)
 
-    @app.errorhandler(404)
-    def not_found_error(_error):
-        app.logger.warning("Page not found: %s", request.url)
-        try:
-            return render_template("404.html"), 404
-        except TemplateNotFound:
-            return jsonify({"code": 404, "message": "请求的资源不存在"}), 404
+    @app.exception_handler(FileNotFoundError)
+    async def file_not_found(_request, error):
+        return error_response(str(error), 500)
 
-    @app.errorhandler(500)
-    def internal_error(error):
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(_request, _error):
+        return error_response("请求参数无效", 400)
+
+    @app.exception_handler(HTTPException)
+    async def http_error(_request, error):
+        message = "请求的资源不存在" if error.status_code == 404 else str(error.detail)
+        return error_response(message, error.status_code)
+
+    @app.exception_handler(Exception)
+    async def internal_error(_request, error):
         app.logger.exception("Server error: %s", error)
-        try:
-            return render_template("500.html"), 500
-        except TemplateNotFound:
-            return jsonify({"code": 500, "message": "服务器内部错误"}), 500
-
-    return app
+        return JSONResponse(
+            status_code=500,
+            content={"code": 500, "message": "服务器内部错误"},
+        )
 
 
 def configure_logging(app, app_root):
-    del app.logger.handlers[:]
-
     log_dir = os.path.join(app_root, "logs")
     os.makedirs(log_dir, exist_ok=True)
 
@@ -149,7 +157,5 @@ def configure_logging(app, app_root):
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
-    app.logger.addHandler(file_handler)
-    app.logger.addHandler(console_handler)
+    app.logger = logging.getLogger("showcase.backend")
     app.logger.setLevel(logging.INFO)
-    app.logger.info("Showcase Vision API started")

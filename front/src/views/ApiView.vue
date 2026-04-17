@@ -2,10 +2,10 @@
   <section class="content-grid">
     <div class="card">
       <p class="section-tag">Backend Contract</p>
-      <h3>Flask 接口联调说明</h3>
+      <h3>FastAPI 接口联调说明</h3>
       <p class="hero-text">
-        当前前端默认使用模拟数据工作。等你训练好模型后，只需要在 Flask 中实现下面这些接口，
-        再把 `VITE_USE_MOCK` 设为 `false`，前端就能切换到真实推理模式。
+        后端通过 FastAPI 提供模型推理接口。保持后端服务运行后，前端会把上传媒体发送到对应流程，
+        并使用返回的结果媒体、检测框和场景分析更新演示页面。
       </p>
 
       <div class="api-state">
@@ -23,8 +23,8 @@
           <p>用于前端判断服务是否启动、模型是否加载成功。</p>
         </article>
         <article class="endpoint-item">
-          <strong>POST /api/infer</strong>
-          <p>接收图像路径或上传文件、天气类型、算法名称、置信度阈值，返回检测框、统计信息和场景结论。</p>
+          <strong>POST /api/pipelines/low-light-detect</strong>
+          <p>接收上传图片或视频、置信度阈值和 IoU 阈值，返回增强结果、检测结果、统计信息和场景结论。</p>
         </article>
         <article class="endpoint-item">
           <strong>GET /api/models</strong>

@@ -33,7 +33,7 @@ export async function fetchHomepageMedia() {
 
 export async function runVisionPipeline({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/pipeline_file/process`,
+    endpoint: `${API_BASE}/pipelines/low-light-detect`,
     file,
     confidence,
     iou,
@@ -44,7 +44,7 @@ export async function runVisionPipeline({ file, confidence = 0.25, iou = 0.45 })
 
 export async function runDirectDetect({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/yolo26_bdd100k_file/detect`,
+    endpoint: `${API_BASE}/detections/yolo26`,
     file,
     confidence,
     iou,
@@ -55,7 +55,7 @@ export async function runDirectDetect({ file, confidence = 0.25, iou = 0.45 }) {
 
 export async function runLowLightEnhance({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/low_light_file/enhance`,
+    endpoint: `${API_BASE}/enhancements/low-light`,
     file,
     confidence,
     iou,
@@ -66,7 +66,7 @@ export async function runLowLightEnhance({ file, confidence = 0.25, iou = 0.45 }
 
 export async function runLightweightLowLightEnhance({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/lightweight_low_light_file/enhance`,
+    endpoint: `${API_BASE}/enhancements/low-light/lightweight`,
     file,
     confidence,
     iou,
@@ -77,7 +77,7 @@ export async function runLightweightLowLightEnhance({ file, confidence = 0.25, i
 
 export async function runDerainOnly({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/derain_file/derain`,
+    endpoint: `${API_BASE}/enhancements/derain`,
     file,
     confidence,
     iou,
@@ -88,7 +88,7 @@ export async function runDerainOnly({ file, confidence = 0.25, iou = 0.45 }) {
 
 export async function runDehazeOnly({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/c2pnet_file/dehaze`,
+    endpoint: `${API_BASE}/enhancements/dehaze`,
     file,
     confidence,
     iou,
@@ -99,7 +99,7 @@ export async function runDehazeOnly({ file, confidence = 0.25, iou = 0.45 }) {
 
 export async function runDehazePipeline({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/dehaze_pipeline_file/process`,
+    endpoint: `${API_BASE}/pipelines/dehaze-detect`,
     file,
     confidence,
     iou,
@@ -110,7 +110,7 @@ export async function runDehazePipeline({ file, confidence = 0.25, iou = 0.45 })
 
 export async function runDerainPipeline({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/derain_pipeline_file/process`,
+    endpoint: `${API_BASE}/pipelines/derain-detect`,
     file,
     confidence,
     iou,
@@ -121,7 +121,7 @@ export async function runDerainPipeline({ file, confidence = 0.25, iou = 0.45 })
 
 export async function runLightweightPipeline({ file, confidence = 0.25, iou = 0.45 }) {
   return runPipelineRequest({
-    endpoint: `${API_BASE}/lightweight_pipeline_file/process`,
+    endpoint: `${API_BASE}/pipelines/lightweight-low-light-detect`,
     file,
     confidence,
     iou,

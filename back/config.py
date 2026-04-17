@@ -2,10 +2,7 @@ import os
 
 
 class BaseConfig:
-    SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "showcase-backend")
-    JSON_AS_ASCII = False
-    RESTX_MASK_SWAGGER = False
-    SWAGGER_UI_DOC_EXPANSION = "list"
+    SECRET_KEY = os.getenv("APP_SECRET_KEY", "showcase-backend")
     MAX_CONTENT_LENGTH = 256 * 1024 * 1024
 
 

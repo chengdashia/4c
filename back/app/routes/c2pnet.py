@@ -1,12 +1,10 @@
 import os
 
 import cv2
-from flask import jsonify, make_response, request
-from flask_restx import Namespace, Resource
+from fastapi import APIRouter, File, UploadFile
 
+from app.http import UploadFileStorage, error_response, success_response, validate_upload_file
 from app.utils.image_processing import (
-    allowed_file,
-    allowed_mime_type,
     infer_media_type,
     save_cv2_image,
     save_upload_file,
@@ -25,124 +23,100 @@ app_root = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__fil
 upload_folder = os.path.join(app_root, "static", "images", "c2pnet", "uploads")
 result_folder = os.path.join(app_root, "static", "images", "c2pnet", "results")
 
-c2pnet_file_ns = Namespace("c2pnet_file", description="c2pnet image dehaze file api")
+router = APIRouter(tags=["enhancements"])
 
 
-@c2pnet_file_ns.route("/dehaze", methods=["POST"])
-class C2PNetDehazeResource(Resource):
-    @c2pnet_file_ns.doc(
-        description="上传图片文件并返回去雾结果图片地址",
-        responses={200: "图像去雾成功", 400: "无效输入", 500: "服务器内部错误"},
+@router.post("/enhancements/dehaze")
+def dehaze(file: UploadFile | None = File(None)):
+    upload_error = validate_upload_file(file)
+    if upload_error:
+        return upload_error
+
+    upload_path = save_upload_file(UploadFileStorage(file), upload_folder)
+    media_type = infer_media_type(file.filename, file.content_type)
+
+    if media_type == "video":
+        return _handle_video(upload_path, app_root)
+
+    image = cv2.imread(upload_path)
+    if image is None:
+        return error_response("上传图片读取失败", 400)
+    result = dehaze_c2pnet_raw(image)
+
+    result_filename = f"dehazed_{os.path.basename(upload_path)}"
+    result_path = save_cv2_image(result["image"], result_folder, result_filename)
+
+    return success_response(
+        "图像去雾成功",
+        {
+            "media_type": "image",
+            "upload_image": convert_to_url_path(upload_path, app_root),
+            "upload_media": convert_to_url_path(upload_path, app_root),
+            "result_image": convert_to_url_path(result_path, app_root),
+            "result_media": convert_to_url_path(result_path, app_root),
+            "timing_ms": result["timing_ms"],
+            "image_shape": result["image_shape"],
+        },
     )
-    def post(self):
-        if "file" not in request.files:
-            return make_response(jsonify({"code": 400, "message": "没有文件被上传"}), 400)
 
-        file = request.files["file"]
-        if file.filename == "":
-            return make_response(jsonify({"code": 400, "message": "没有选择文件"}), 400)
-        if not allowed_file(file.filename):
-            return make_response(jsonify({"code": 400, "message": "不允许的文件类型"}), 400)
-        if not allowed_mime_type(file.content_type):
-            return make_response(jsonify({"code": 400, "message": "不允许的MIME类型"}), 400)
 
-        upload_path = save_upload_file(file, upload_folder)
-        media_type = infer_media_type(file.filename, file.content_type)
+def _handle_video(upload_path, app_root):
+    capture = open_video_capture(upload_path)
+    metadata = get_video_metadata(capture)
+    result_prefix = f"dehazed_{os.path.splitext(os.path.basename(upload_path))[0]}"
+    result_path = build_output_video_path(result_folder, result_prefix)
+    writer, codec = create_video_writer(
+        result_path,
+        metadata["width"],
+        metadata["height"],
+        metadata["fps"],
+    )
 
-        if media_type == "video":
-            return self._handle_video(upload_path, app_root)
+    total_timing_ms = 0.0
+    frames_processed = 0
 
-        image = cv2.imread(upload_path)
-        if image is None:
-            return make_response(jsonify({"code": 400, "message": "上传图片读取失败"}), 400)
-        result = dehaze_c2pnet_raw(image)
+    try:
+        def process_frame(_frame_index, frame):
+            return dehaze_c2pnet_raw(frame)
 
-        result_filename = f"dehazed_{os.path.basename(upload_path)}"
-        result_path = save_cv2_image(result["image"], result_folder, result_filename)
+        def handle_result(result):
+            nonlocal total_timing_ms, frames_processed
+            writer.write(result["image"])
+            total_timing_ms += float(result["timing_ms"]["total_ms"])
+            frames_processed += 1
 
-        return make_response(
-            jsonify(
-                {
-                    "code": 200,
-                    "message": "图像去雾成功",
-                    "data": {
-                        "media_type": "image",
-                        "upload_image": convert_to_url_path(upload_path, app_root),
-                        "upload_media": convert_to_url_path(upload_path, app_root),
-                        "result_image": convert_to_url_path(result_path, app_root),
-                        "result_media": convert_to_url_path(result_path, app_root),
-                        "timing_ms": result["timing_ms"],
-                        "image_shape": result["image_shape"],
-                    },
-                }
-            ),
-            200,
+        parallel_stats = process_video_in_parallel(
+            capture,
+            process_frame,
+            handle_result,
+            warmup_fn=warmup_c2pnet_model,
         )
+    finally:
+        capture.release()
+        writer.release()
 
-    @staticmethod
-    def _handle_video(upload_path, app_root):
-        capture = open_video_capture(upload_path)
-        metadata = get_video_metadata(capture)
-        result_prefix = f"dehazed_{os.path.splitext(os.path.basename(upload_path))[0]}"
-        result_path = build_output_video_path(result_folder, result_prefix)
-        writer, codec = create_video_writer(
-            result_path,
-            metadata["width"],
-            metadata["height"],
-            metadata["fps"],
-        )
+    if frames_processed == 0:
+        return error_response("上传视频读取失败", 400)
 
-        total_timing_ms = 0.0
-        frames_processed = 0
-
-        try:
-            def process_frame(_frame_index, frame):
-                return dehaze_c2pnet_raw(frame)
-
-            def handle_result(result):
-                nonlocal total_timing_ms, frames_processed
-                writer.write(result["image"])
-                total_timing_ms += float(result["timing_ms"]["total_ms"])
-                frames_processed += 1
-
-            parallel_stats = process_video_in_parallel(
-                capture,
-                process_frame,
-                handle_result,
-                warmup_fn=warmup_c2pnet_model,
-            )
-        finally:
-            capture.release()
-            writer.release()
-
-        if frames_processed == 0:
-            return make_response(jsonify({"code": 400, "message": "上传视频读取失败"}), 400)
-
-        return make_response(
-            jsonify(
-                {
-                    "code": 200,
-                    "message": "视频去雾成功",
-                    "data": {
-                        "media_type": "video",
-                        "upload_image": convert_to_url_path(upload_path, app_root),
-                        "upload_media": convert_to_url_path(upload_path, app_root),
-                        "result_image": convert_to_url_path(result_path, app_root),
-                        "result_media": convert_to_url_path(result_path, app_root),
-                        "video_meta": {
-                            **metadata,
-                            "processed_frames": frames_processed,
-                            "codec": codec,
-                        },
-                        "timing_ms": {
-                            "total_ms": round(total_timing_ms, 2),
-                            "avg_frame_ms": round(total_timing_ms / frames_processed, 2),
-                            "wall_ms": parallel_stats["elapsed_ms"],
-                            "workers": parallel_stats["workers"],
-                            "warmup_workers": parallel_stats["warmup_workers"],
-                        },
-                    },
-                }
-            ),
-            200,
-        )
+    return success_response(
+        "视频去雾成功",
+        {
+            "media_type": "video",
+            "upload_image": convert_to_url_path(upload_path, app_root),
+            "upload_media": convert_to_url_path(upload_path, app_root),
+            "result_image": convert_to_url_path(result_path, app_root),
+            "result_media": convert_to_url_path(result_path, app_root),
+            "video_meta": {
+                **metadata,
+                "processed_frames": frames_processed,
+                "codec": codec,
+            },
+            "timing_ms": {
+                "total_ms": round(total_timing_ms, 2),
+                "avg_frame_ms": round(total_timing_ms / frames_processed, 2),
+                "wall_ms": parallel_stats["elapsed_ms"],
+                "workers": parallel_stats["workers"],
+                "warmup_workers": parallel_stats["warmup_workers"],
+            },
+        },
+    )
