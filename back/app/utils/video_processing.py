@@ -1,12 +1,15 @@
 import math
 import os
 import platform
+import shutil
+import subprocess
 import threading
 from atexit import register as register_atexit
 from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
 
 import cv2
+import numpy as np
 
 
 DEFAULT_VIDEO_FPS = 25.0
@@ -14,7 +17,7 @@ DEFAULT_MAX_VIDEO_WORKERS = min(4, os.cpu_count() or 1)
 DEFAULT_GPU_VIDEO_WORKERS = 2
 DEFAULT_IN_FLIGHT_FACTOR = 2
 DEFAULT_VIDEO_CODECS = ("avc1", "H264", "mp4v")
-WINDOWS_VIDEO_CODECS = ("mp4v", "avc1", "H264")
+WINDOWS_VIDEO_CODECS = ("mp4v",)
 _EXECUTOR_LOCK = threading.Lock()
 _EXECUTORS = {}
 
@@ -55,7 +58,108 @@ def build_output_video_path(save_dir, filename_prefix):
     return os.path.join(save_dir, f"{filename_prefix}.mp4")
 
 
+def get_ffmpeg_executable():
+    configured = os.getenv("FFMPEG_BINARY", "").strip()
+    if configured:
+        return configured
+
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+
+    return shutil.which("ffmpeg")
+
+
+class FFmpegVideoWriter:
+    def __init__(self, video_path, width, height, fps, ffmpeg_executable):
+        if width <= 0 or height <= 0:
+            raise VideoProcessingError("结果视频保存失败，视频宽高无效")
+
+        self.video_path = video_path
+        self.width = int(width)
+        self.height = int(height)
+        self.fps = float(fps) if fps and math.isfinite(float(fps)) else DEFAULT_VIDEO_FPS
+        self._closed = False
+
+        command = [
+            ffmpeg_executable,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-vcodec",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s",
+            f"{self.width}x{self.height}",
+            "-r",
+            f"{self.fps:.6f}",
+            "-i",
+            "-",
+            "-an",
+            "-vcodec",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "23",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            self.video_path,
+        ]
+        self._process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+
+    def write(self, frame):
+        if self._closed:
+            raise VideoProcessingError("结果视频保存失败，写入器已关闭")
+        if self._process.stdin is None:
+            raise VideoProcessingError("结果视频保存失败，FFmpeg 输入不可用")
+        if frame.shape[:2] != (self.height, self.width):
+            raise VideoProcessingError("结果视频保存失败，输出帧尺寸与视频尺寸不一致")
+        if frame.dtype != np.uint8:
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+
+        try:
+            self._process.stdin.write(np.ascontiguousarray(frame).tobytes())
+        except BrokenPipeError as exc:
+            raise VideoProcessingError("结果视频保存失败，FFmpeg 写入中断") from exc
+
+    def release(self):
+        if self._closed:
+            return
+        self._closed = True
+
+        if self._process.stdin is not None:
+            self._process.stdin.close()
+        stderr = self._process.stderr.read() if self._process.stderr is not None else b""
+        return_code = self._process.wait()
+        if return_code != 0:
+            message = stderr.decode("utf-8", errors="ignore").strip()
+            if message:
+                raise VideoProcessingError(f"结果视频保存失败，FFmpeg 编码失败: {message}")
+            raise VideoProcessingError("结果视频保存失败，FFmpeg 编码失败")
+
+
 def create_video_writer(video_path, width, height, fps):
+    ffmpeg_executable = get_ffmpeg_executable()
+    if ffmpeg_executable:
+        try:
+            return FFmpegVideoWriter(video_path, width, height, fps, ffmpeg_executable), "libx264"
+        except OSError:
+            pass
+
     codecs = WINDOWS_VIDEO_CODECS if platform.system() == "Windows" else DEFAULT_VIDEO_CODECS
     for codec in codecs:
         fourcc = cv2.VideoWriter_fourcc(*codec)

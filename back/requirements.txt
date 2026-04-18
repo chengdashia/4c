@@ -3,6 +3,8 @@ uvicorn>=0.27
 python-multipart>=0.0.9
 numpy>=1.24
 opencv-python-headless>=4.8
-onnxruntime>=1.17
+onnxruntime>=1.17; platform_system != "Windows"
+onnxruntime-directml>=1.17; platform_system == "Windows"
 Pillow>=10.0
 ultralytics>=8.4.0
+imageio-ffmpeg>=0.5

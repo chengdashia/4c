@@ -12,7 +12,7 @@ import config
 import homepage_media
 from app.http import error_response
 from app.utils.image_codec import ImageDecodeError
-from app.utils.model_loader import get_model_status
+from app.utils.model_loader import get_acceleration_status, get_model_status
 from app.utils.video_processing import VideoProcessingError
 
 
@@ -72,6 +72,7 @@ def register_routes(app, app_root):
             "message": "Showcase Vision API is ready.",
             "models": models,
             "model_loaded": any(model["loaded"] for model in models),
+            "acceleration": get_acceleration_status(),
         }
 
     @app.get("/api/models")

@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import threading
 
 import onnxruntime
@@ -25,22 +26,48 @@ _derain_loaded = False
 _thread_local = threading.local()
 
 
+def select_torch_device():
+    try:
+        import torch
+    except ImportError:
+        return "cpu"
+
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+
+    mps = getattr(getattr(torch, "backends", None), "mps", None)
+    if mps is not None and mps.is_available():
+        return torch.device("mps")
+
+    return torch.device("cpu")
+
+
 def get_ort_execution_providers():
     available = set(onnxruntime.get_available_providers())
     preferred = []
-    allow_coreml = str(os.getenv("ENABLE_COREML", "")).strip().lower() in {"1", "true", "yes"}
+    system = platform.system()
+    coreml_disabled = str(os.getenv("ENABLE_COREML", "")).strip().lower() in {"0", "false", "no"}
+    allow_coreml = system == "Darwin" and not coreml_disabled
+
+    if system == "Windows":
+        for provider in (
+            "CUDAExecutionProvider",
+            "DmlExecutionProvider",
+            "CPUExecutionProvider",
+        ):
+            if provider in available:
+                preferred.append(provider)
+        return preferred or ["CPUExecutionProvider"]
+
+    if allow_coreml and "CoreMLExecutionProvider" in available:
+        preferred.append("CoreMLExecutionProvider")
 
     for provider in (
         "CUDAExecutionProvider",
-        "DmlExecutionProvider",
         "CPUExecutionProvider",
     ):
         if provider in available:
             preferred.append(provider)
-
-    if allow_coreml and "CoreMLExecutionProvider" in available:
-        insert_at = 1 if preferred and preferred[0] != "CPUExecutionProvider" else 0
-        preferred.insert(insert_at, "CoreMLExecutionProvider")
 
     if not preferred:
         preferred = ["CPUExecutionProvider"]
@@ -51,6 +78,13 @@ def get_ort_execution_providers():
 def is_gpu_accelerated():
     providers = get_ort_execution_providers()
     return any(provider != "CPUExecutionProvider" for provider in providers)
+
+
+def get_acceleration_status():
+    return {
+        "onnxruntime_providers": get_ort_execution_providers(),
+        "torch_device": str(select_torch_device()),
+    }
 
 
 def get_session_thread_config():
