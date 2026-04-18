@@ -1,10 +1,9 @@
 import os
 
-import cv2
 from fastapi import APIRouter, File, Form, UploadFile
 
 from app.http import UploadFileStorage, error_response, success_response, validate_upload_file
-from app.utils.image_processing import infer_media_type, save_cv2_image, save_upload_file
+from app.utils.image_processing import infer_media_type, read_image_bgr, save_cv2_image, save_upload_file
 from app.utils.model_loader import (
     dehaze_c2pnet_raw,
     detect_yolo26_raw,
@@ -88,7 +87,7 @@ def process_dehaze_pipeline(
     if media_type == "video":
         return _handle_video(upload_path, conf_thres, iou_thres, app_root)
 
-    image = cv2.imread(upload_path)
+    image = read_image_bgr(upload_path)
     if image is None:
         return error_response("上传图片读取失败", 400)
 

@@ -1,11 +1,11 @@
 import os
 
 from fastapi import APIRouter, File, Form, UploadFile
-import cv2
 
 from app.http import UploadFileStorage, error_response, success_response, validate_upload_file
 from app.utils.image_processing import (
     infer_media_type,
+    read_image_bgr,
     save_cv2_image,
     save_upload_file,
 )
@@ -42,7 +42,7 @@ def detect_yolo26(
     if media_type == "video":
         return _handle_video(upload_path, conf_thres, iou_thres, app_root)
 
-    image = cv2.imread(upload_path)
+    image = read_image_bgr(upload_path)
     if image is None:
         return error_response("上传图片读取失败", 400)
     result = detect_yolo26_raw(image, conf_thres=conf_thres, iou_thres=iou_thres)

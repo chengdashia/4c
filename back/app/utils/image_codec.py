@@ -8,7 +8,7 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 class ImageDecodeError(ValueError):
@@ -16,11 +16,27 @@ class ImageDecodeError(ValueError):
 
 
 def _decode_image_bytes(image_bytes):
-    image_array = np.frombuffer(image_bytes, dtype=np.uint8)
-    image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-    if image is None:
-        raise ImageDecodeError("无法解析图片数据")
-    return image
+    try:
+        pil_image = Image.open(io.BytesIO(image_bytes))
+        pil_image = ImageOps.exif_transpose(pil_image).convert("RGB")
+    except Exception as exc:
+        raise ImageDecodeError("无法解析图片数据") from exc
+
+    image = np.array(pil_image)
+    return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+
+def read_image_bgr(image_path):
+    try:
+        with open(image_path, "rb") as image_file:
+            image_bytes = image_file.read()
+    except OSError:
+        return None
+
+    try:
+        return _decode_image_bytes(image_bytes)
+    except ImageDecodeError:
+        return None
 
 
 def decode_request_image(request):

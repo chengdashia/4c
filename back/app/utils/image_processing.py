@@ -5,6 +5,7 @@ from app.utils.image_codec import (
     decode_base64_to_image,
     detections_to_dict,
     infer_media_type,
+    read_image_bgr,
     save_cv2_image,
     save_upload_file,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "decode_base64_to_image",
     "detections_to_dict",
     "infer_media_type",
+    "read_image_bgr",
     "save_cv2_image",
     "save_upload_file",
 ]
