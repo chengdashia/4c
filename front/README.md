@@ -13,7 +13,7 @@
 ## 启动方式
 
 ```bash
-cd /Users/dong/Documents/code/4c/showcase-system/front
+cd front
 npm install
 npm run dev
 ```
